@@ -1,0 +1,12 @@
+services:
+  fw-fuehrerschein:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Europe/Berlin
+      - PORT=3000
+      - DATA_DIR=/app/data
+    restart: unless-stopped

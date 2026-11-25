@@ -1,0 +1,17 @@
+node_modules/
+data/
+server/dist/
+client/dist/
+.env
+.env.*
+.app-secret
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.log
+.DS_Store
+Thumbs.db
