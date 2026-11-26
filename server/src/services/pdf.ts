@@ -64,6 +64,8 @@ function createPdfBuffer(build: (doc: PDFKit.PDFDocument) => void): Promise<Buff
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
+        const prevBottom = doc.page.margins.bottom;
+        doc.page.margins.bottom = 0;
         doc
           .font('Helvetica')
           .fontSize(8)
@@ -72,8 +74,9 @@ function createPdfBuffer(build: (doc: PDFKit.PDFDocument) => void): Promise<Buff
             safePdfText(`Seite ${i + 1} von ${range.count} - Erstellt am ${formatDateDe(getTodayIsoDate())}`),
             40,
             doc.page.height - 28,
-            { align: 'right', width: doc.page.width - 80 },
+            { align: 'right', width: doc.page.width - 80, lineBreak: false },
           );
+        doc.page.margins.bottom = prevBottom;
       }
       doc.end();
     } catch (err) {

@@ -513,6 +513,12 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
         `${endpoint} should start with %PDF-`,
       );
       assert.ok(res.buffer.length > 500, `${endpoint} should not be empty`);
+      const pageMatches = res.buffer.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? [];
+      assert.equal(
+        pageMatches.length,
+        1,
+        `${endpoint} should fit on 1 page without blank footer pages`,
+      );
     }
   });
 
