@@ -46,8 +46,14 @@ export function createVehiclesRouter(
   router.get(
     '/',
     requireAuth,
-    asyncHandler((_req, res) => {
-      res.json(evaluation.listEvaluatedVehicles());
+    asyncHandler((req, res) => {
+      const summaryOnly = req.query.summary === '1' || req.query.includeDrivers === 'false';
+      const list = evaluation.listEvaluatedVehicles();
+      if (summaryOnly) {
+        res.json(list.map((v) => ({ ...v, drivers: [] })));
+        return;
+      }
+      res.json(list);
     }),
   );
 

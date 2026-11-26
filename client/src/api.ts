@@ -289,7 +289,8 @@ export const api = {
     request<{ ok?: boolean }>(`/api/inspections/${id}`, { method: 'DELETE' }),
 
   // Vehicles
-  listVehicles: () => request<EvaluatedVehicle[]>('/api/vehicles'),
+  listVehicles: (options?: { summary?: boolean }) =>
+    request<EvaluatedVehicle[]>(options?.summary ? '/api/vehicles?summary=1' : '/api/vehicles'),
   getVehicle: (id: number) => request<EvaluatedVehicle>(`/api/vehicles/${id}`),
   createVehicle: (payload: VehiclePayload) =>
     request<EvaluatedVehicle>('/api/vehicles', {

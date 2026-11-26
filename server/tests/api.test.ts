@@ -436,6 +436,21 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.ok(byId.get(memberYellow78.id)?.reasons.some((r) => r.includes('78')));
     assert.equal(byId.get(memberRedExpired.id)?.status, 'red');
     assert.equal(byId.get(memberRedBan.id)?.status, 'red');
+
+    // Summary mode omits drivers array while preserving exact counts; :id lazy-loads drivers
+    const summaryRes = await viewerClient.json<EvaluatedVehicle[]>('GET', '/api/vehicles?summary=1');
+    assert.equal(summaryRes.status, 200);
+    const summaryVehicle = summaryRes.data.find((v) => v.id === testVehicle.id);
+    assert.ok(summaryVehicle);
+    assert.equal(summaryVehicle.drivers.length, 0);
+    assert.ok(summaryVehicle.counts.total >= 4);
+
+    const detailVehicle = await viewerClient.json<EvaluatedVehicle>(
+      'GET',
+      `/api/vehicles/${testVehicle.id}`,
+    );
+    assert.equal(detailVehicle.status, 200);
+    assert.equal(detailVehicle.data.drivers.length, summaryVehicle.counts.total);
   });
 
   // =========================================================================
