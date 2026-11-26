@@ -14,6 +14,8 @@ import type { RawMailConfig, SettingsService } from './settings.js';
 export interface NotificationRunResult {
   digestSent: number;
   memberEmailsSent: number;
+  digestErrors: string[];
+  memberErrors: string[];
   errors: string[];
   skippedReason?: string;
 }
@@ -301,6 +303,8 @@ export class NotificationService {
       return {
         digestSent: 0,
         memberEmailsSent: 0,
+        digestErrors: [],
+        memberErrors: [],
         errors: [],
         skippedReason: 'Kein E-Mail-Provider konfiguriert.',
       };
@@ -317,7 +321,8 @@ export class NotificationService {
 
     let digestSent = 0;
     let memberEmailsSent = 0;
-    const errors: string[] = [];
+    const digestErrors: string[] = [];
+    const memberErrors: string[] = [];
 
     if (sendDigest) {
       const digestContent = this.buildDigestContent(departmentName, activeMembers);
@@ -347,7 +352,7 @@ export class NotificationService {
             digestSent++;
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            errors.push(`Digest an ${recipient}: ${msg}`);
+            digestErrors.push(`Digest an ${recipient}: ${msg}`);
             this.insertLog({
               dedupe_key: null,
               recipient,
@@ -474,7 +479,7 @@ export class NotificationService {
               memberEmailsSent++;
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              errors.push(`Erinnerung an ${email}: ${msg}`);
+              memberErrors.push(`Erinnerung an ${email}: ${msg}`);
               this.insertLog({
                 dedupe_key: null,
                 recipient: email,
@@ -489,6 +494,12 @@ export class NotificationService {
       }
     }
 
-    return { digestSent, memberEmailsSent, errors };
+    return {
+      digestSent,
+      memberEmailsSent,
+      digestErrors,
+      memberErrors,
+      errors: [...digestErrors, ...memberErrors],
+    };
   }
 }

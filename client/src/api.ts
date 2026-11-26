@@ -1,5 +1,6 @@
 import type {
   AppSettingsPublic,
+  AuditLogEntry,
   EvaluatedMember,
   EvaluatedVehicle,
   FederalStateCode,
@@ -9,6 +10,7 @@ import type {
   MailProvider,
   MemberLicense,
   MemberStatus,
+  MemberVehicleSummary,
   NotificationLogEntry,
   PublicUser,
   StateRuleConfig,
@@ -44,6 +46,7 @@ export interface MemberPayload {
   first_name: string;
   last_name: string;
   personnel_number: string | null;
+  birth_date: string | null;
   unit: string | null;
   email: string | null;
   phone: string | null;
@@ -68,6 +71,8 @@ export interface VehiclePayload {
   unit: string | null;
   required_classes: LicenseClass[];
   is_automatic: boolean;
+  requires_trailer: boolean;
+  requires_briefing: boolean;
   notes: string | null;
   active: boolean;
 }
@@ -76,6 +81,7 @@ export interface CsvPreviewRow {
   rowNumber: number;
   action: 'create' | 'update' | 'error';
   errors: string[];
+  warnings?: string[];
   existingMemberId?: number;
   data: {
     first_name: string;
@@ -154,6 +160,14 @@ export interface SettingsUpdatePayload {
   notify_member_days_before?: number[];
 }
 
+export interface MemberFilterParams {
+  search?: string;
+  unit?: string;
+  status?: string;
+  licenseClass?: string;
+  trafficLight?: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -225,17 +239,17 @@ export const api = {
     display_name: string;
     email: string;
     password: string;
-  }) => request<{ user: PublicUser; departmentName?: string }>('/api/auth/setup', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }),
+  }) =>
+    request<{ user: PublicUser; departmentName?: string }>('/api/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   login: (payload: { username: string; password: string }) =>
     request<{ user: PublicUser }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
   logout: () => request<{ ok?: boolean }>('/api/auth/logout', { method: 'POST' }),
-  getMe: () => request<{ user: PublicUser } | PublicUser>('/api/auth/me'),
   changePassword: (payload: { currentPassword: string; newPassword: string }) =>
     request<{ ok?: boolean }>('/api/auth/change-password', {
       method: 'POST',
@@ -246,15 +260,19 @@ export const api = {
   getDashboard: () => request<DashboardSummary>('/api/dashboard'),
 
   // Members
-  listMembers: (filters?: {
-    search?: string;
-    unit?: string;
-    status?: string;
-    licenseClass?: string;
-    trafficLight?: string;
-  }) => request<EvaluatedMember[]>(`/api/members${buildQuery(filters ?? {})}`),
+  listMembers: (filters?: MemberFilterParams) =>
+    request<EvaluatedMember[]>(
+      `/api/members${buildQuery((filters ?? {}) as Record<string, string | undefined>)}`,
+    ),
   listUnits: () => request<string[]>('/api/members/units'),
   getMember: (id: number) => request<EvaluatedMember>(`/api/members/${id}`),
+  getMemberVehicles: (id: number) =>
+    request<MemberVehicleSummary[]>(`/api/members/${id}/vehicles`),
+  updateMemberBriefings: (id: number, vehicleIds: number[]) =>
+    request<{ ok: boolean; briefed_vehicle_ids: number[] }>(`/api/members/${id}/briefings`, {
+      method: 'PUT',
+      body: JSON.stringify({ vehicleIds }),
+    }),
   createMember: (payload: MemberPayload) =>
     request<EvaluatedMember>('/api/members', {
       method: 'POST',
@@ -280,17 +298,23 @@ export const api = {
     inspected_at: string;
     result: InspectionResult;
     notes: string | null;
+    checked_eu_card?: boolean;
+    checked_fw_license?: boolean;
+    checked_restrictions?: boolean;
   }) =>
     request<Inspection>('/api/inspections', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  deleteInspection: (id: number) =>
-    request<{ ok?: boolean }>(`/api/inspections/${id}`, { method: 'DELETE' }),
+  cancelInspection: (id: number, reason: string) =>
+    request<Inspection>(`/api/inspections/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  getInspectionAuditLogs: () => request<AuditLogEntry[]>('/api/inspections/audit'),
 
   // Vehicles
-  listVehicles: (options?: { summary?: boolean }) =>
-    request<EvaluatedVehicle[]>(options?.summary ? '/api/vehicles?summary=1' : '/api/vehicles'),
+  listVehicles: () => request<EvaluatedVehicle[]>('/api/vehicles'),
   getVehicle: (id: number) => request<EvaluatedVehicle>(`/api/vehicles/${id}`),
   createVehicle: (payload: VehiclePayload) =>
     request<EvaluatedVehicle>('/api/vehicles', {
@@ -322,7 +346,6 @@ export const api = {
   updateUser: (
     id: number,
     payload: {
-      username?: string;
       display_name?: string;
       email?: string | null;
       role?: UserRole;
@@ -360,7 +383,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  runNotifications: (payload?: { forceDigest?: boolean; sendDigest?: boolean; sendMembers?: boolean }) =>
+  runNotifications: (payload?: {
+    forceDigest?: boolean;
+    sendDigest?: boolean;
+    sendMembers?: boolean;
+  }) =>
     request<NotificationRunResponse>('/api/notifications/run', {
       method: 'POST',
       body: JSON.stringify(payload ?? {}),
@@ -433,7 +460,8 @@ export const api = {
     vehiclesPdf: (vehicleId?: number) =>
       `/api/reports/vehicles.pdf${buildQuery({ vehicleId })}`,
     membersPdf: (unit?: string) => `/api/reports/members.pdf${buildQuery({ unit })}`,
-    membersCsv: () => '/api/export/members.csv',
+    membersCsv: (filters?: MemberFilterParams) =>
+      `/api/export/members.csv${buildQuery((filters ?? {}) as Record<string, string | undefined>)}`,
     csvTemplate: () => '/api/import/template.csv',
     calendarIcs: () => '/api/calendar.ics',
     backupSqlite: () => '/api/admin/backup/sqlite',

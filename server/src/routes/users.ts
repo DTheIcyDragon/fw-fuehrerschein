@@ -72,8 +72,8 @@ export function createUsersRouter(db: AppDatabase): Router {
       if (!username) {
         throw new HttpError(400, 'Benutzername ist erforderlich');
       }
-      if (password.length < 4) {
-        throw new HttpError(400, 'Passwort muss mindestens 4 Zeichen lang sein');
+      if (password.length < 8) {
+        throw new HttpError(400, 'Passwort muss mindestens 8 Zeichen lang sein');
       }
       if (!VALID_ROLES.has(role)) {
         throw new HttpError(400, 'Ungültige Rolle');
@@ -154,8 +154,8 @@ export function createUsersRouter(db: AppDatabase): Router {
 
       let passwordHash = existing.password_hash;
       if (typeof body.password === 'string' && body.password.length > 0) {
-        if (body.password.length < 4) {
-          throw new HttpError(400, 'Passwort muss mindestens 4 Zeichen lang sein');
+        if (body.password.length < 8) {
+          throw new HttpError(400, 'Passwort muss mindestens 8 Zeichen lang sein');
         }
         passwordHash = hashPassword(body.password);
       }

@@ -93,8 +93,8 @@ export function createVehiclesRouter(
         .prepare(`
           INSERT INTO vehicles (
             name, call_sign, license_plate, unit, required_classes_json,
-            is_automatic, notes, active, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_automatic, requires_trailer, requires_briefing, notes, active, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           name,
@@ -103,6 +103,8 @@ export function createVehiclesRouter(
           cleanOptionalText(body.unit),
           JSON.stringify(requiredClasses),
           body.is_automatic ? 1 : 0,
+          body.requires_trailer ? 1 : 0,
+          body.requires_briefing ? 1 : 0,
           cleanOptionalText(body.notes),
           body.active === undefined ? 1 : body.active ? 1 : 0,
           now,
@@ -150,6 +152,8 @@ export function createVehiclesRouter(
           unit = ?,
           required_classes_json = ?,
           is_automatic = ?,
+          requires_trailer = ?,
+          requires_briefing = ?,
           notes = ?,
           active = ?,
           updated_at = ?
@@ -161,6 +165,20 @@ export function createVehiclesRouter(
         'unit' in body ? cleanOptionalText(body.unit) : existing.unit,
         JSON.stringify(requiredClasses),
         'is_automatic' in body ? (body.is_automatic ? 1 : 0) : existing.is_automatic ? 1 : 0,
+        'requires_trailer' in body
+          ? body.requires_trailer
+            ? 1
+            : 0
+          : existing.requires_trailer
+            ? 1
+            : 0,
+        'requires_briefing' in body
+          ? body.requires_briefing
+            ? 1
+            : 0
+          : existing.requires_briefing
+            ? 1
+            : 0,
         'notes' in body ? cleanOptionalText(body.notes) : existing.notes,
         'active' in body ? (body.active ? 1 : 0) : existing.active ? 1 : 0,
         now,

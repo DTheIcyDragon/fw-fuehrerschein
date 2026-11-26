@@ -223,12 +223,11 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Schleswig-Holstein',
     regulationName: 'Fahrberechtigungsverordnung SH (FahrbVO)',
     summary:
-      'Feuerwehrführerschein bis 4,75 t und 7,5 t inkl. Kombinationen bei mindestens 2 Jahren Vorbesitz der Klasse B.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbildung, 45-Min.-Prüfung & Rosa-Bescheinigung.',
     highlights: [
-      'Gilt für Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM jeweils inklusive Kombinationen bis zu dieser Gesamtmasse.',
-      'Voraussetzung: mindestens 2 Jahre ununterbrochener Vorbesitz der Klasse B.',
-      'Mindestens 45 Minuten praktische Abschlussprüfung; Ausbilder mind. 30 Jahre alt und mind. 5 Jahre Klasse C1.',
-      'Fahrberechtigungs-Bescheinigung (Rosa-Format) ist im Dienst stets mitzuführen; bundesweit nur im Ehrenamt gültig.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM inkl. Kombinationen und mind. 2 Jahre Vorbesitz Klasse B.',
+      'Landesspezifisch (FahrbVO SH): Mindestens 45 Minuten praktische Abschlussprüfung; Ausbilder mind. 30 Jahre alt und mind. 5 Jahre Klasse C1.',
+      'Fahrberechtigungs-Bescheinigung im Rosa-Format ist im Dienst stets mitzuführen; bundesweit nur im Ehrenamt gültig.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -238,6 +237,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -246,11 +246,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Baden-Württemberg',
     regulationName: '2. Fahrberechtigungsverordnung BW (2. FbVO)',
     summary:
-      'Fahrberechtigung bis 4,75 t und 7,5 t für ehrenamtliche Angehörige der Feuerwehr und Hilfsorganisationen.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Einweisung durch Einweiser oder Fahrschule.',
     highlights: [
-      'Umfasst Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM inklusive Anhängerkombinationen.',
-      'Mindestens 2 Jahre Vorbesitz der gültigen Klasse B erforderlich.',
-      'Ausbildung und Einweisung durch qualifizierte organisationsinterne Einweiser oder Fahrschule.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM (inkl. Kombinationen) und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (2. FbVO): Ausbildung und Einweisung durch qualifizierte organisationsinterne Einweiser oder Fahrschule.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -260,6 +259,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -268,11 +268,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Bayern',
     regulationName: 'Fahrberechtigungsverordnung Bayern (FBerV)',
     summary:
-      'Bayerischer Feuerwehrführerschein bis 4,75 t und 7,5 t nach FBerV mit 2 Jahren Klasse-B-Vorbesitz.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt 4 bzw. 6 Übungsfahrten à 45 Min. & Prüfung.',
     highlights: [
-      'Fahrberechtigung bis 4,75 t bzw. 7,5 t zGM (auch mit Anhänger innerhalb der jeweiligen Gesamtmasse).',
-      'Voraussetzung: mindestens 2 Jahre Vorbesitz der Fahrerlaubnisklasse B ohne laufendes Fahrverbot.',
-      'Einweisung umfasst mindestens 4 bzw. 6 Übungsfahrten à 45 Min. mit anschließender praktischer Prüfung.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM (auch mit Anhänger) und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (FBerV): Einweisung umfasst mind. 4 bzw. 6 Übungsfahrten à 45 Min. mit anschließender praktischer Prüfung.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -282,6 +281,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -290,11 +290,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Berlin',
     regulationName: 'Fahrberechtigungsverordnung Berlin (FBV)',
     summary:
-      'Landesregelung für ehrenamtliche Einsatzkräfte in Berlin bis 4,75 t und 7,5 t zGM.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Zuständigkeit & Nachweis in Berlin.',
     highlights: [
-      'Zulässig für ehrenamtliche Angehörige der Freiwilligen Feuerwehren und anerkannten Hilfsorganisationen.',
-      'Mindestens 2 Jahre Vorbesitz der Klasse B zwingend erforderlich.',
-      'Nur gültig für Einsatz-, Übungs- und Ausbildungsfahrten im Ehrenamt.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Vorbesitz Klasse B.',
+      'Landesspezifisch (FBV Berlin): Zuständigkeit und Nachweisdokumentation für Freiwillige Feuerwehren und Hilfsorganisationen in Berlin.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -304,6 +303,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -312,11 +312,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Brandenburg',
     regulationName: 'Brandenburgische Fahrberechtigungsverordnung (BbgFBV)',
     summary:
-      'Fahrberechtigung bis 4,75 t und 7,5 t für ehrenamtliche Einsatzkräfte im Land Brandenburg.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbilder-Anforderungen & Prüfungsfahrt.',
     highlights: [
-      'Gilt für Einsatzfahrzeuge und Kombinationen bis 4,75 t bzw. 7,5 t zGM.',
-      'Mindestens 2 Jahre Vorbesitz Klasse B sowie gültige Fahrerlaubnis bei jeder Fahrt.',
-      'Ausbildung und Prüfungsfahrt durch fachkundigen Ausbilder innerhalb der Organisation.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Vorbesitz Klasse B.',
+      'Landesspezifisch (BbgFBV): Ausbildung und Prüfungsfahrt durch fachkundigen Ausbilder innerhalb der Organisation.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -326,6 +325,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -334,11 +334,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Bremen',
     regulationName: 'Bremische Fahrberechtigungsverordnung (BremFBVO)',
     summary:
-      'Regelung der Freien Hansestadt Bremen für Feuerwehr-Fahrberechtigungen bis 4,75 t und 7,5 t.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Prüfungsnachweis & Mitführpflicht.',
     highlights: [
-      'Deckt Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM inkl. Anhänger innerhalb der Massegrenze ab.',
-      'Erfordert mindestens 2 Jahre Vorbesitz der Klasse B.',
-      'Schriftlicher Nachweis muss bei Fahrten mitgeführt werden.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM inkl. Anhänger und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (BremFBVO): Schriftlicher Nachweis muss bei Dienstfahrten mitgeführt werden.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -348,6 +347,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -356,11 +356,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Hamburg',
     regulationName: 'Hamburgische Feuerwehr-Fahrberechtigungsverordnung (HmbFwFBVO)',
     summary:
-      'Hamburger Verordnung für Einsatzfahrzeuge der Freiwilligen Feuerwehr bis 4,75 t und 7,5 t.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Einweiser der Feuerwehrschule.',
     highlights: [
-      'Gilt für ehrenamtliche Mitglieder der Freiwilligen Feuerwehr Hamburg und Hilfsorganisationen.',
-      'Mindestens 2 Jahre Vorbesitz der Klasse B; bei Entzug/Sperre von B ruht die Fahrberechtigung.',
-      'Ausbildung durch qualifizierte Einweiser der Feuerwehrschule bzw. Organisation.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (HmbFwFBVO): Ausbildung durch qualifizierte Einweiser der Feuerwehrschule bzw. Organisation.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -370,6 +369,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -378,11 +378,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Hessen',
     regulationName: 'Hessische Fahrberechtigungsverordnung (HFbV)',
     summary:
-      'Hessische Regelung für den Feuerwehrführerschein bis 4,75 t und 7,5 t inkl. Kombinationen.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Dokumentation durch Gemeindebrandinspektor.',
     highlights: [
-      'Stufen bis 4,75 t (kleiner Feuerwehrführerschein) und bis 7,5 t zGM.',
-      'Mindestens 2 Jahre Vorbesitz der gültigen Klasse B erforderlich.',
-      'Praktische Einweisung und Prüfungsfahrt mit Dokumentation durch den Gemeindebrandinspektor / Leiter der Feuerwehr.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: Stufen bis 4,75 t und 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (HFbV): Praktische Einweisung und Prüfungsfahrt mit Dokumentation durch Gemeindebrandinspektor / Leiter der Feuerwehr.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -392,6 +391,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -400,11 +400,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Mecklenburg-Vorpommern',
     regulationName: 'Fahrberechtigungsverordnung M-V (FbVO M-V)',
     summary:
-      'Landesverordnung M-V für Fahrberechtigungen bis 4,75 t und 7,5 t im Ehrenamt.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbildung & Prüfungsabnahme.',
     highlights: [
-      'Umfasst Einsatzfahrzeuge und Kombinationen bis 4,75 t bzw. 7,5 t zGM.',
-      'Erfordert mindestens 2 Jahre Vorbesitz der Klasse B.',
-      'Nachweisliche Einweisung und Prüfung durch qualifizierten Ausbilder erforderlich.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Vorbesitz Klasse B.',
+      'Landesspezifisch (FbVO M-V): Nachweisliche Einweisung und Prüfung durch qualifizierten Ausbilder.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -414,6 +413,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -422,11 +422,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Niedersachsen',
     regulationName: 'Niedersächsische Fahrberechtigungsverordnung (NFbVO)',
     summary:
-      'Niedersächsische Regelung bis 4,75 t und 7,5 t zGM für Feuerwehren und Hilfsorganisationen.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbildungs- & Mitführvorgaben.',
     highlights: [
-      'Stufen bis 4,75 t und 7,5 t zGM (inklusive Anhängerkombinationen innerhalb der Grenze).',
-      'Mindestens 2 Jahre Vorbesitz der Klasse B erforderlich.',
-      'Gilt nur für ehrenamtliche Aufgabenerfüllung; Bescheinigung ist mitzuführen.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: Stufen bis 4,75 t und 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (NFbVO): Gilt nur für ehrenamtliche Aufgabenerfüllung; Bescheinigung ist mitzuführen.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -436,6 +435,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -444,11 +444,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Nordrhein-Westfalen',
     regulationName: 'Fahrberechtigungsverordnung NRW (FbVO NRW)',
     summary:
-      'NRW-Verordnung für Einsatzfahrzeuge bis 4,75 t und 7,5 t nach § 2 Abs. 10a StVG.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbilder-Kriterien (30 J., 5 J. C1).',
     highlights: [
-      'Gilt für Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM inklusive Anhänger innerhalb der Massegrenze.',
-      'Voraussetzung: mindestens 2 Jahre ununterbrochener Besitz der Klasse B.',
-      'Ausbildung durch einweisungsberechtigte Feuerwehrangehörige (mind. 30 Jahre, mind. 5 Jahre Klasse C1) oder Fahrlehrer.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM inkl. Anhänger und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (FbVO NRW): Ausbildung durch einweisungsberechtigte Feuerwehrangehörige (mind. 30 Jahre, mind. 5 Jahre C1) oder Fahrlehrer.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -458,6 +457,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -466,11 +466,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Rheinland-Pfalz',
     regulationName: 'Landesverordnung über die Erteilung von Fahrberechtigungen (FbLVO RP)',
     summary:
-      'Rheinland-pfälzische Verordnung für Fahrberechtigungen bis 4,75 t und 7,5 t zGM.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Erteilung durch Aufgabenträger.',
     highlights: [
-      'Umfasst Einsatzfahrzeuge bis 4,75 t und 7,5 t inklusive zulässiger Kombinationen.',
-      'Mindestens 2 Jahre Vorbesitz der Klasse B erforderlich.',
-      'Erteilung durch Aufgabenträger nach praktischer Einweisung und Prüfungsfahrt.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t und 7,5 t inkl. Kombinationen und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (FbLVO RP): Erteilung durch Aufgabenträger nach praktischer Einweisung und Prüfungsfahrt.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -480,6 +479,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -488,11 +488,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Saarland',
     regulationName: 'Saarländische Fahrberechtigungsverordnung (SFbVO)',
     summary:
-      'Saarländische Landesregelung für den Feuerwehrführerschein bis 4,75 t und 7,5 t.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Nachweis & Durchführung im Saarland.',
     highlights: [
-      'Berechtigt zum Führen von Einsatzfahrzeugen bis 4,75 t bzw. 7,5 t zGM im Ehrenamt.',
-      'Mindestens 2 Jahre Vorbesitz der gültigen Klasse B erforderlich.',
-      'Schriftliche Fahrberechtigung ist bei Dienstfahrten mitzuführen.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (SFbVO): Schriftliche Fahrberechtigung ist bei Dienstfahrten mitzuführen.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -502,6 +501,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -510,11 +510,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Sachsen',
     regulationName: 'Sächsische Feuerwehr-Fahrberechtigungsverordnung (SächsFwFbVO)',
     summary:
-      'Sächsische Verordnung über das Führen von Einsatzfahrzeugen bis 4,75 t und 7,5 t zGM.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt 45-Min.-Prüfungsfahrt.',
     highlights: [
-      'Gilt für ehrenamtliche Feuerwehrangehörige bis 4,75 t bzw. 7,5 t zGM.',
-      'Mindestens 2 Jahre Vorbesitz Klasse B sowie gültige Fahrerlaubnis erforderlich.',
-      'Umfassende Einweisung mit mindestens 45-minütiger Prüfungsfahrt.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (SächsFwFbVO): Umfassende Einweisung mit mindestens 45-minütiger Prüfungsfahrt.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -524,6 +523,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -532,11 +532,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Sachsen-Anhalt',
     regulationName: 'Fahrberechtigungsverordnung Sachsen-Anhalt (FbVO LSA)',
     summary:
-      'Landesregelung Sachsen-Anhalt für Einsatzfahrzeuge bis 4,75 t und 7,5 t im Ehrenamt.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ehrenamtsnachweis in Sachsen-Anhalt.',
     highlights: [
-      'Umfasst Einsatzfahrzeuge bis 4,75 t und 7,5 t zGM inkl. Anhänger innerhalb der Grenze.',
-      'Erfordert mindestens 2 Jahre Vorbesitz der Klasse B.',
-      'Nur gültig für Einsatz- und Übungsfahrten der Feuerwehr / Hilfsorganisationen.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t und 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (FbVO LSA): Nur gültig für Einsatz- und Übungsfahrten der Feuerwehr / Hilfsorganisationen.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -546,6 +545,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -554,11 +554,10 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
     name: 'Thüringen',
     regulationName: 'Thüringer Feuerwehr-Fahrberechtigungsverordnung (ThürFwFbVO)',
     summary:
-      'Thüringer Verordnung für ehrenamtliche Feuerwehrangehörige bis 4,75 t und 7,5 t zGM.',
+      'StVG-Basis (§ 2 Abs. 10a StVG: 4,75 t / 7,5 t, 2 Jahre Vorbesitz B); Landes-VO regelt Ausbildung & Prüfungsfahrt.',
     highlights: [
-      'Deckt Einsatzfahrzeuge bis 4,75 t bzw. 7,5 t zGM inklusive Kombinationen ab.',
-      'Mindestens 2 Jahre Vorbesitz der gültigen Klasse B erforderlich.',
-      'Ausbildung durch befähigten Ausbilder mit abschließender praktischer Prüfungsfahrt.',
+      'Bundeseinheitlich nach § 2 Abs. 10a StVG: 4,75 t bzw. 7,5 t zGM und mind. 2 Jahre Klasse B.',
+      'Landesspezifisch (ThürFwFbVO): Ausbildung durch befähigten Ausbilder mit abschließender praktischer Prüfungsfahrt.',
     ],
     defaults: {
       fw_475_enabled: true,
@@ -568,6 +567,7 @@ export const FEDERAL_STATE_PRESETS: Record<FederalStateCode, FederalStatePreset>
       fw_allow_trailers: true,
       fw_renewal_months: null,
       strict_inspection_blocking: false,
+      expired_card_blocks_driving: false,
       custom_rules_notes: '',
     },
   },
@@ -623,6 +623,10 @@ export function resolveEffectiveStateRules(settings: RuleSettings): {
       patch.strict_inspection_blocking !== undefined
         ? Boolean(patch.strict_inspection_blocking)
         : defaults.strict_inspection_blocking,
+    expired_card_blocks_driving:
+      patch.expired_card_blocks_driving !== undefined
+        ? Boolean(patch.expired_card_blocks_driving)
+        : defaults.expired_card_blocks_driving,
     custom_rules_notes:
       patch.custom_rules_notes !== undefined
         ? String(patch.custom_rules_notes)
@@ -847,19 +851,30 @@ export function evaluateSingleLicense(
   };
 }
 
-export function computeCoveredClasses(licenses: MemberLicense[], today: string, onlyValid: boolean): LicenseClass[] {
-  const heldSet = new Set<LicenseClass>();
-  for (const lic of licenses) {
-    if (onlyValid && lic.expires_at && isValidIsoDate(lic.expires_at) && diffDaysIso(today, lic.expires_at) < 0) {
-      continue;
-    }
-    heldSet.add(lic.license_class);
+function doesHeldLicenseCover(lic: MemberLicense, target: LicenseClass): boolean {
+  const allowedHolders = CLASS_COVERED_BY[target];
+  if (!allowedHolders.includes(lic.license_class)) {
+    return false;
   }
+  // CE with key number 79 (legacy class 3 grandfathering) only covers trains up to 12 t / 3 axles,
+  // not full class C (> 7.5 t truck) or unrestricted CE.
+  if (lic.license_class === 'CE' && lic.key_numbers.includes('79')) {
+    return target !== 'C' && target !== 'CE';
+  }
+  return true;
+}
+
+export function computeCoveredClasses(licenses: MemberLicense[], today: string, onlyValid: boolean): LicenseClass[] {
+  const activeLicenses = licenses.filter((lic) => {
+    if (onlyValid && lic.expires_at && isValidIsoDate(lic.expires_at) && diffDaysIso(today, lic.expires_at) < 0) {
+      return false;
+    }
+    return true;
+  });
 
   const covered: LicenseClass[] = [];
   for (const target of ALL_LICENSE_CLASSES) {
-    const allowedHolders = CLASS_COVERED_BY[target];
-    if (allowedHolders.some((holder) => heldSet.has(holder))) {
+    if (activeLicenses.some((lic) => doesHeldLicenseCover(lic, target))) {
       covered.push(target);
     }
   }
@@ -877,13 +892,23 @@ export function evaluateMember(
   const { stateName, rules } = resolveEffectiveStateRules(settings);
 
   const hasValidB = member.licenses.some((lic) => {
-    if (!CLASS_COVERED_BY.B.includes(lic.license_class)) return false;
+    if (!doesHeldLicenseCover(lic, 'B')) return false;
     if (lic.expires_at && isValidIsoDate(lic.expires_at) && diffDaysIso(today, lic.expires_at) < 0) {
       return false;
     }
     return true;
   });
-  const bLicense = member.licenses.find((lic) => lic.license_class === 'B');
+
+  const bCoveringIssuedDates = member.licenses
+    .filter(
+      (lic) =>
+        doesHeldLicenseCover(lic, 'B') &&
+        lic.issued_at &&
+        isValidIsoDate(lic.issued_at),
+    )
+    .map((lic) => lic.issued_at as string)
+    .sort();
+  const earliestBIssuedAt = bCoveringIssuedDates[0] ?? null;
 
   const evaluatedLicenses = member.licenses.map((l) => {
     const isFw = l.license_class === 'FW_475' || l.license_class === 'FW_750';
@@ -927,13 +952,8 @@ export function evaluateMember(
       licReasons.push('Stufe in den aktuellen Landesregeln deaktiviert');
     }
 
-    if (
-      hasValidB &&
-      rules.fw_min_b_years > 0 &&
-      bLicense?.issued_at &&
-      isValidIsoDate(bLicense.issued_at)
-    ) {
-      const minEligibleDate = addMonthsIso(bLicense.issued_at, rules.fw_min_b_years * 12);
+    if (hasValidB && rules.fw_min_b_years > 0 && earliestBIssuedAt) {
+      const minEligibleDate = addMonthsIso(earliestBIssuedAt, rules.fw_min_b_years * 12);
       if (today < minEligibleDate) {
         status = worstStatus(status, 'yellow');
         licReasons.push(
@@ -958,7 +978,9 @@ export function evaluateMember(
     cardDaysUntilExpiry = diffDaysIso(today, member.card_expires_at);
     if (cardDaysUntilExpiry < 0) {
       cardStatus = 'red';
-      cardReason = `Führerscheinkarte seit ${formatDateDe(member.card_expires_at)} abgelaufen`;
+      cardReason = rules.expired_card_blocks_driving
+        ? `Führerscheinkarte seit ${formatDateDe(member.card_expires_at)} abgelaufen`
+        : 'Führerscheinkarte abgelaufen (§ 24a FeV OWi – Dokument erneuern, Fahrerlaubnis prüfen)';
     } else if (cardDaysUntilExpiry <= settings.license_warn_days) {
       cardStatus = 'yellow';
       cardReason =
@@ -989,17 +1011,69 @@ export function evaluateMember(
   let overallStatus: TrafficLight = 'green';
   if (
     banCurrentlyActive ||
-    cardStatus === 'red' ||
+    (cardStatus === 'red' && rules.expired_card_blocks_driving) ||
     evaluatedLicenses.some((l) => l.status === 'red') ||
     inspection.status === 'red'
   ) {
     overallStatus = 'red';
   } else if (
+    cardStatus === 'red' ||
     cardStatus === 'yellow' ||
     evaluatedLicenses.some((l) => l.status === 'yellow') ||
     inspection.status === 'yellow'
   ) {
     overallStatus = 'yellow';
+  }
+
+  if (member.birth_date && isValidIsoDate(member.birth_date)) {
+    const has50YearRuleClass = member.licenses.some(
+      (lic) =>
+        !lic.expires_at &&
+        ((lic.license_class === 'CE' && lic.key_numbers.includes('79')) ||
+          lic.license_class === 'C' ||
+          lic.license_class === 'CE'),
+    );
+    if (has50YearRuleClass) {
+      const warnFrom = addMonthsIso(member.birth_date, 49 * 12);
+      if (today >= warnFrom) {
+        reasons.push('50. Lebensjahr: Ärztliche Verlängerung für C/CE bzw. CE 79 erforderlich');
+        overallStatus = worstStatus(overallStatus, 'yellow');
+      }
+    }
+  }
+
+  if (
+    member.card_issued_at &&
+    isValidIsoDate(member.card_issued_at) &&
+    member.card_issued_at < '2013-01-19' &&
+    !member.card_expires_at
+  ) {
+    if (member.birth_date && isValidIsoDate(member.birth_date)) {
+      const { year: birthYear } = parseIsoDateParts(member.birth_date);
+      let exchangeDate = '2025-01-19';
+      if (birthYear < 1953) exchangeDate = '2033-01-19';
+      else if (birthYear <= 1958) exchangeDate = '2022-01-19';
+      else if (birthYear <= 1964) exchangeDate = '2023-01-19';
+      else if (birthYear <= 1970) exchangeDate = '2024-01-19';
+
+      if (today > exchangeDate) {
+        reasons.push(
+          `Umtauschfrist für Altführerschein (Geburtsjahr ${birthYear}) am ${formatDateDe(exchangeDate)} abgelaufen`,
+        );
+        overallStatus = worstStatus(overallStatus, 'yellow');
+      } else {
+        reasons.push(
+          `Gestaffelte Umtauschfrist für Altführerschein: Pflichtumtausch bis ${formatDateDe(exchangeDate)}`,
+        );
+        if (diffDaysIso(today, exchangeDate) <= settings.license_warn_days) {
+          overallStatus = worstStatus(overallStatus, 'yellow');
+        }
+      }
+    } else {
+      reasons.push(
+        'Altführerschein (vor 19.01.2013): Gestaffelte Umtauschfrist nach Geburtsjahr prüfen',
+      );
+    }
   }
 
   const validHeldLicenses = evaluatedLicenses
@@ -1034,10 +1108,9 @@ function findBestCoveringLicense(
   const candidates: Array<{ license: EvaluatedLicense; directOrIncluded: 'direct' | 'included'; score: number }> = [];
 
   for (const req of requiredClasses) {
-    const allowed = CLASS_COVERED_BY[req];
     for (const lic of memberLicenses) {
       if (onlyValid && lic.status === 'red') continue;
-      if (!allowed.includes(lic.license_class)) continue;
+      if (!doesHeldLicenseCover(lic, req)) continue;
 
       const directOrIncluded = lic.license_class === req ? 'direct' : 'included';
       let score = directOrIncluded === 'direct' ? 100 : 50;
@@ -1059,12 +1132,12 @@ export function evaluateVehicleDrivers(
   vehicle: Vehicle,
   evaluatedMembers: Array<{ member: Member; evaluation: MemberEvaluation }>,
   settings?: RuleSettings,
+  briefedMemberIds?: Set<number>,
 ): VehicleDriverEntry[] {
   const entries: VehicleDriverEntry[] = [];
   const required = vehicle.required_classes.length > 0 ? vehicle.required_classes : (['B'] as LicenseClass[]);
-  const strictInspectionBlocking = settings
-    ? resolveEffectiveStateRules(settings).rules.strict_inspection_blocking
-    : false;
+  const effectiveRules = settings ? resolveEffectiveStateRules(settings).rules : getDefaultStateRules('SH');
+  const strictInspectionBlocking = effectiveRules.strict_inspection_blocking;
 
   for (const { member, evaluation } of evaluatedMembers) {
     if (member.status !== 'active') continue;
@@ -1074,6 +1147,8 @@ export function evaluateVehicleDrivers(
     if (!anyMatch) continue;
 
     const validMatch = findBestCoveringLicense(evaluation.licenses, required, true);
+    const activeMatch = validMatch ?? anyMatch;
+    const isBriefed = briefedMemberIds?.has(member.id) ?? false;
     const reasons: string[] = [];
     let status: TrafficLight = 'green';
 
@@ -1086,7 +1161,7 @@ export function evaluateVehicleDrivers(
       );
     }
 
-    if (evaluation.cardStatus === 'red' && evaluation.cardReason) {
+    if (evaluation.cardStatus === 'red' && evaluation.cardReason && effectiveRules.expired_card_blocks_driving) {
       status = 'red';
       reasons.push(evaluation.cardReason);
     }
@@ -1106,14 +1181,41 @@ export function evaluateVehicleDrivers(
       reasons.push(anyMatch.license.reason);
     }
 
-    const activeMatch = validMatch ?? anyMatch;
+    const hasKey78 =
+      member.global_key_numbers.includes('78') ||
+      activeMatch.license.key_numbers.includes('78');
+    if (!vehicle.is_automatic && hasKey78) {
+      status = 'red';
+      reasons.push('Schlüsselzahl 78 (Automatik-Beschränkung) – Schaltfahrzeug nicht zulässig (§ 21 StVG)');
+    }
+
+    if (!effectiveRules.fw_allow_trailers && vehicle.requires_trailer && validMatch) {
+      const isFwMatch =
+        validMatch.license.license_class === 'FW_475' ||
+        validMatch.license.license_class === 'FW_750';
+      const hasNonFwValidCover = evaluation.licenses.some(
+        (lic) =>
+          lic.status !== 'red' &&
+          lic.license_class !== 'FW_475' &&
+          lic.license_class !== 'FW_750' &&
+          required.some((req) => doesHeldLicenseCover(lic, req)),
+      );
+      if (isFwMatch && !hasNonFwValidCover) {
+        status = 'red';
+        reasons.push('Landesregel erlaubt keinen Anhängerbetrieb mit Feuerwehrführerschein');
+      }
+    }
 
     if (status !== 'red') {
       if (activeMatch.license.status === 'yellow') {
         status = worstStatus(status, 'yellow');
         reasons.push(activeMatch.license.reason);
       }
-      if (evaluation.cardStatus === 'yellow' && evaluation.cardReason) {
+      if (
+        (evaluation.cardStatus === 'yellow' ||
+          (evaluation.cardStatus === 'red' && !effectiveRules.expired_card_blocks_driving)) &&
+        evaluation.cardReason
+      ) {
         status = worstStatus(status, 'yellow');
         reasons.push(evaluation.cardReason);
       }
@@ -1121,13 +1223,9 @@ export function evaluateVehicleDrivers(
         status = worstStatus(status, 'yellow');
         reasons.push(evaluation.inspection.reason);
       }
-
-      const hasKey78 =
-        member.global_key_numbers.includes('78') ||
-        activeMatch.license.key_numbers.includes('78');
-      if (!vehicle.is_automatic && hasKey78) {
+      if (vehicle.requires_briefing && !isBriefed) {
         status = worstStatus(status, 'yellow');
-        reasons.push('Schlüsselzahl 78 (Automatik-Beschränkung) bei Schaltfahrzeug');
+        reasons.push('Fahrzeug-Einweisung fehlt');
       }
     }
 
@@ -1151,6 +1249,7 @@ export function evaluateVehicleDrivers(
       reasons,
       lastInspectedAt: evaluation.inspection.lastInspectedAt,
       nextInspectionDueAt: evaluation.inspection.nextDueAt,
+      isBriefed,
     });
   }
 

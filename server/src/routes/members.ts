@@ -1,8 +1,12 @@
 import { Router } from 'express';
-import { ALL_LICENSE_CLASSES, isValidIsoDate } from '../../../shared/licenseRules.js';
+import {
+  ALL_LICENSE_CLASSES,
+  getTodayIsoDate,
+  isValidIsoDate,
+} from '../../../shared/licenseRules.js';
 import type { LicenseClass, MemberStatus } from '../../../shared/types.js';
-import type { AppDatabase } from '../db/database.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { type AppDatabase, writeAuditLog } from '../db/database.js';
+import { type AuthRequest, requireAuth, requireRole } from '../middleware/auth.js';
 import type { EvaluationService } from '../services/evaluation.js';
 import { asyncHandler, HttpError } from '../utils/asyncHandler.js';
 
@@ -54,10 +58,18 @@ function normalizeLicenses(raw: unknown): NormalizedLicense[] {
       throw new HttpError(400, `Unbekannte Führerscheinklasse: ${lc}`);
     }
     const licenseClass = lc as LicenseClass;
+    const issuedAt = cleanOptionalDate(obj.issued_at, `Erteilungsdatum (${lc})`);
+    const expiresAt = cleanOptionalDate(obj.expires_at, `Ablaufdatum (${lc})`);
+    if (issuedAt && expiresAt && issuedAt > expiresAt) {
+      throw new HttpError(
+        400,
+        `Erteilungsdatum darf nicht nach dem Ablaufdatum liegen (Klasse ${lc})`,
+      );
+    }
     byClass.set(licenseClass, {
       license_class: licenseClass,
-      issued_at: cleanOptionalDate(obj.issued_at, `Erteilungsdatum (${lc})`),
-      expires_at: cleanOptionalDate(obj.expires_at, `Ablaufdatum (${lc})`),
+      issued_at: issuedAt,
+      expires_at: expiresAt,
       key_numbers: cleanStringArray(obj.key_numbers),
       notes: cleanOptionalText(obj.notes),
     });
@@ -97,6 +109,90 @@ export function createMembersRouter(
   );
 
   router.get(
+    '/:id/vehicles',
+    requireAuth,
+    asyncHandler((req, res) => {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new HttpError(400, 'Ungültige Kameraden-ID');
+      }
+      const member = evaluation.getEvaluatedMember(id);
+      if (!member) {
+        throw new HttpError(404, 'Kamerad nicht gefunden');
+      }
+      res.json(evaluation.getMemberVehicles(id));
+    }),
+  );
+
+  router.put(
+    '/:id/briefings',
+    requireRole('admin', 'inspector'),
+    asyncHandler((req: AuthRequest, res) => {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new HttpError(400, 'Ungültige Kameraden-ID');
+      }
+      const existing = evaluation.getEvaluatedMember(id);
+      if (!existing) {
+        throw new HttpError(404, 'Kamerad nicht gefunden');
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(body.vehicleIds)) {
+        throw new HttpError(400, 'vehicleIds muss ein Array sein');
+      }
+
+      const vehicleIds: number[] = [];
+      const seen = new Set<number>();
+      for (const rawId of body.vehicleIds) {
+        const vid = Number(rawId);
+        if (!Number.isInteger(vid) || vid <= 0) {
+          throw new HttpError(400, 'Ungültige Fahrzeug-ID in vehicleIds');
+        }
+        if (!seen.has(vid)) {
+          seen.add(vid);
+          vehicleIds.push(vid);
+        }
+      }
+
+      if (vehicleIds.length > 0) {
+        const checkStmt = db.prepare('SELECT id FROM vehicles WHERE id = ?');
+        for (const vid of vehicleIds) {
+          if (!checkStmt.get(vid)) {
+            throw new HttpError(400, `Fahrzeug mit ID ${vid} nicht gefunden`);
+          }
+        }
+      }
+
+      const today = getTodayIsoDate();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.prepare('DELETE FROM vehicle_briefings WHERE member_id = ?').run(id);
+        const insertStmt = db.prepare(
+          'INSERT INTO vehicle_briefings (member_id, vehicle_id, briefed_at) VALUES (?, ?, ?)',
+        );
+        for (const vid of vehicleIds) {
+          insertStmt.run(id, vid, today);
+        }
+        writeAuditLog(db, {
+          actorUserId: req.user!.id,
+          actorName: req.user!.display_name,
+          action: 'update_briefings',
+          entityType: 'member',
+          entityId: id,
+          details: { vehicleIds },
+        });
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+
+      res.json(evaluation.getEvaluatedMember(id));
+    }),
+  );
+
+  router.get(
     '/:id',
     requireAuth,
     asyncHandler((req, res) => {
@@ -129,36 +225,53 @@ export function createMembersRouter(
       }
 
       const licenses = normalizeLicenses(body.licenses);
+      const birthDate = cleanOptionalDate(body.birth_date, 'Geburtsdatum');
+      const cardIssuedAt = cleanOptionalDate(body.card_issued_at, 'Karten-Ausstellungsdatum');
+      const cardExpiresAt = cleanOptionalDate(body.card_expires_at, 'Karten-Ablaufdatum');
+      const banFrom = cleanOptionalDate(body.ban_from, 'Fahrverbot ab');
+      const banUntil = cleanOptionalDate(body.ban_until, 'Fahrverbot bis');
+
+      if (birthDate && birthDate > getTodayIsoDate()) {
+        throw new HttpError(400, 'Geburtsdatum darf nicht in der Zukunft liegen');
+      }
+      if (cardIssuedAt && cardExpiresAt && cardIssuedAt > cardExpiresAt) {
+        throw new HttpError(400, 'Karten-Ausstellungsdatum darf nicht nach dem Ablaufdatum liegen');
+      }
+      if (banFrom && banUntil && banFrom > banUntil) {
+        throw new HttpError(400, 'Fahrverbot-Beginn darf nicht nach dem Enddatum liegen');
+      }
+
       const now = new Date().toISOString();
 
       let newId = 0;
-      db.exec('BEGIN');
+      db.exec('BEGIN IMMEDIATE');
       try {
         const insertRes = db
           .prepare(`
             INSERT INTO members (
-              first_name, last_name, personnel_number, unit, email, phone, status,
+              first_name, last_name, personnel_number, birth_date, unit, email, phone, status,
               license_number, card_issued_at, card_expires_at, issuing_authority,
               global_key_numbers_json, ban_active, ban_from, ban_until, ban_reason,
               notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `)
           .run(
             firstName,
             lastName,
             cleanOptionalText(body.personnel_number),
+            birthDate,
             cleanOptionalText(body.unit),
             cleanOptionalText(body.email),
             cleanOptionalText(body.phone),
             statusRaw,
             cleanOptionalText(body.license_number),
-            cleanOptionalDate(body.card_issued_at, 'Karten-Ausstellungsdatum'),
-            cleanOptionalDate(body.card_expires_at, 'Karten-Ablaufdatum'),
+            cardIssuedAt,
+            cardExpiresAt,
             cleanOptionalText(body.issuing_authority),
             JSON.stringify(cleanStringArray(body.global_key_numbers)),
             body.ban_active ? 1 : 0,
-            cleanOptionalDate(body.ban_from, 'Fahrverbot ab'),
-            cleanOptionalDate(body.ban_until, 'Fahrverbot bis'),
+            banFrom,
+            banUntil,
             cleanOptionalText(body.ban_reason),
             cleanOptionalText(body.notes),
             now,
@@ -224,15 +337,47 @@ export function createMembersRouter(
 
       const hasLicenses = 'licenses' in body && body.licenses !== undefined;
       const licenses = hasLicenses ? normalizeLicenses(body.licenses) : null;
+      const birthDate =
+        'birth_date' in body
+          ? cleanOptionalDate(body.birth_date, 'Geburtsdatum')
+          : existing.birth_date;
+      const cardIssuedAt =
+        'card_issued_at' in body
+          ? cleanOptionalDate(body.card_issued_at, 'Karten-Ausstellungsdatum')
+          : existing.card_issued_at;
+      const cardExpiresAt =
+        'card_expires_at' in body
+          ? cleanOptionalDate(body.card_expires_at, 'Karten-Ablaufdatum')
+          : existing.card_expires_at;
+      const banFrom =
+        'ban_from' in body
+          ? cleanOptionalDate(body.ban_from, 'Fahrverbot ab')
+          : existing.ban_from;
+      const banUntil =
+        'ban_until' in body
+          ? cleanOptionalDate(body.ban_until, 'Fahrverbot bis')
+          : existing.ban_until;
+
+      if (birthDate && birthDate > getTodayIsoDate()) {
+        throw new HttpError(400, 'Geburtsdatum darf nicht in der Zukunft liegen');
+      }
+      if (cardIssuedAt && cardExpiresAt && cardIssuedAt > cardExpiresAt) {
+        throw new HttpError(400, 'Karten-Ausstellungsdatum darf nicht nach dem Ablaufdatum liegen');
+      }
+      if (banFrom && banUntil && banFrom > banUntil) {
+        throw new HttpError(400, 'Fahrverbot-Beginn darf nicht nach dem Enddatum liegen');
+      }
+
       const now = new Date().toISOString();
 
-      db.exec('BEGIN');
+      db.exec('BEGIN IMMEDIATE');
       try {
         db.prepare(`
           UPDATE members SET
             first_name = ?,
             last_name = ?,
             personnel_number = ?,
+            birth_date = ?,
             unit = ?,
             email = ?,
             phone = ?,
@@ -255,6 +400,7 @@ export function createMembersRouter(
           'personnel_number' in body
             ? cleanOptionalText(body.personnel_number)
             : existing.personnel_number,
+          birthDate,
           'unit' in body ? cleanOptionalText(body.unit) : existing.unit,
           'email' in body ? cleanOptionalText(body.email) : existing.email,
           'phone' in body ? cleanOptionalText(body.phone) : existing.phone,
@@ -262,12 +408,8 @@ export function createMembersRouter(
           'license_number' in body
             ? cleanOptionalText(body.license_number)
             : existing.license_number,
-          'card_issued_at' in body
-            ? cleanOptionalDate(body.card_issued_at, 'Karten-Ausstellungsdatum')
-            : existing.card_issued_at,
-          'card_expires_at' in body
-            ? cleanOptionalDate(body.card_expires_at, 'Karten-Ablaufdatum')
-            : existing.card_expires_at,
+          cardIssuedAt,
+          cardExpiresAt,
           'issuing_authority' in body
             ? cleanOptionalText(body.issuing_authority)
             : existing.issuing_authority,
@@ -275,12 +417,8 @@ export function createMembersRouter(
             ? JSON.stringify(cleanStringArray(body.global_key_numbers))
             : JSON.stringify(existing.global_key_numbers),
           'ban_active' in body ? (body.ban_active ? 1 : 0) : existing.ban_active ? 1 : 0,
-          'ban_from' in body
-            ? cleanOptionalDate(body.ban_from, 'Fahrverbot ab')
-            : existing.ban_from,
-          'ban_until' in body
-            ? cleanOptionalDate(body.ban_until, 'Fahrverbot bis')
-            : existing.ban_until,
+          banFrom,
+          banUntil,
           'ban_reason' in body ? cleanOptionalText(body.ban_reason) : existing.ban_reason,
           'notes' in body ? cleanOptionalText(body.notes) : existing.notes,
           now,

@@ -8,9 +8,11 @@ import type { AddressInfo } from 'node:net';
 import { addMonthsIso, getTodayIsoDate } from '../../shared/licenseRules.js';
 import type {
   AppSettingsPublic,
+  AuditLogEntry,
   EvaluatedMember,
   EvaluatedVehicle,
   Inspection,
+  MemberVehicleSummary,
   NotificationLogEntry,
   PublicUser,
 } from '../../shared/types.js';
@@ -140,6 +142,8 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     const health = await anonClient.json<{ status: string }>('GET', '/api/health');
     assert.equal(health.status, 200);
     assert.equal(health.data.status, 'ok');
+    assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(health.headers.get('x-frame-options'), 'DENY');
 
     const unauthMembers = await anonClient.json('GET', '/api/members');
     assert.equal(unauthMembers.status, 401);
@@ -260,6 +264,69 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     );
     assert.equal((await viewerClient.json('PUT', '/api/settings', { department_name: 'X' })).status, 403);
 
+    // Password < 8 chars must be rejected
+    const shortUserRes = await adminClient.json('POST', '/api/users', {
+      username: 'shortpw',
+      display_name: 'Short PW',
+      password: 'short77',
+      role: 'viewer',
+    });
+    assert.equal(shortUserRes.status, 400);
+
+    // /change-password invalidates other sessions + login rate limiter returns 429
+    const rateUserRes = await adminClient.json<PublicUser>('POST', '/api/users', {
+      username: 'ratetest',
+      display_name: 'Rate Test',
+      password: 'password1234',
+      role: 'viewer',
+    });
+    assert.equal(rateUserRes.status, 201);
+
+    const clientA = new CookieClient(baseUrl);
+    const clientB = new CookieClient(baseUrl);
+    assert.equal(
+      (await clientA.json('POST', '/api/auth/login', { username: 'ratetest', password: 'password1234' })).status,
+      200,
+    );
+    assert.equal(
+      (await clientB.json('POST', '/api/auth/login', { username: 'ratetest', password: 'password1234' })).status,
+      200,
+    );
+    assert.equal((await clientB.json('GET', '/api/auth/me')).status, 200);
+
+    // Password < 8 chars rejected on /change-password
+    assert.equal(
+      (
+        await clientA.json('POST', '/api/auth/change-password', {
+          currentPassword: 'password1234',
+          newPassword: 'short77',
+        })
+      ).status,
+      400,
+    );
+
+    const changePwRes = await clientA.json('POST', '/api/auth/change-password', {
+      currentPassword: 'password1234',
+      newPassword: 'newpassword123',
+    });
+    assert.equal(changePwRes.status, 200);
+    assert.equal((await clientA.json('GET', '/api/auth/me')).status, 200);
+    assert.equal((await clientB.json('GET', '/api/auth/me')).status, 401);
+
+    // 10 failed login attempts -> 11th returns 429
+    for (let i = 0; i < 10; i++) {
+      const failRes = await anonClient.json('POST', '/api/auth/login', {
+        username: 'ratetest',
+        password: 'wrong-password',
+      });
+      assert.equal(failRes.status, 401);
+    }
+    const lockedRes = await anonClient.json('POST', '/api/auth/login', {
+      username: 'ratetest',
+      password: 'wrong-password',
+    });
+    assert.equal(lockedRes.status, 429);
+
     // inspector cannot access settings or create vehicles, nor delete members
     assert.equal((await inspectorClient.json('GET', '/api/settings')).status, 403);
     assert.equal((await inspectorClient.json('PUT', '/api/settings', { department_name: 'X' })).status, 403);
@@ -341,10 +408,77 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.equal(inspList.data.length, 1);
     assert.equal(inspList.data[0].notes, 'Originalkarte vorgelegt');
 
+    // Date validation (#9): future inspection or ban_from > ban_until -> 400
+    const futureInspRes = await inspectorClient.json('POST', '/api/inspections', {
+      member_id: memberGreen.id,
+      inspected_at: addMonthsIso(today, 1),
+      result: 'ok',
+    });
+    assert.equal(futureInspRes.status, 400);
+
+    const invalidBanMember = await adminClient.json('POST', '/api/members', {
+      first_name: 'Bad',
+      last_name: 'BanRange',
+      status: 'active',
+      ban_active: true,
+      ban_from: futureDate,
+      ban_until: pastDate,
+    });
+    assert.equal(invalidBanMember.status, 400);
+
+    // Inspection cancel & audit log (#3): DELETE -> 405, POST /:id/cancel -> 200, GET /audit
+    const tempInspRes = await inspectorClient.json<Inspection>('POST', '/api/inspections', {
+      member_id: memberGreen.id,
+      inspected_at: today,
+      result: 'issue',
+      notes: 'Versehentlich erfasst',
+      checked_eu_card: true,
+      checked_fw_license: true,
+      checked_restrictions: true,
+    });
+    assert.equal(tempInspRes.status, 201);
+    assert.equal(tempInspRes.data.checked_eu_card, true);
+    assert.equal(tempInspRes.data.checked_fw_license, true);
+    assert.equal(tempInspRes.data.checked_restrictions, true);
+
+    const delInspRes = await adminClient.json('DELETE', `/api/inspections/${tempInspRes.data.id}`);
+    assert.equal(delInspRes.status, 405);
+
+    const cancelMissingReason = await adminClient.json(
+      'POST',
+      `/api/inspections/${tempInspRes.data.id}/cancel`,
+      { reason: '   ' },
+    );
+    assert.equal(cancelMissingReason.status, 400);
+
+    const cancelInspRes = await adminClient.json<Inspection>(
+      'POST',
+      `/api/inspections/${tempInspRes.data.id}/cancel`,
+      { reason: 'Fehleintrag im Test' },
+    );
+    assert.equal(cancelInspRes.status, 200);
+    assert.ok(cancelInspRes.data.cancelled_at);
+    assert.equal(cancelInspRes.data.cancel_reason, 'Fehleintrag im Test');
+
+    // Cancelled issue inspection must NOT turn memberGreen red
+    const greenAfterCancel = await viewerClient.json<EvaluatedMember>(
+      'GET',
+      `/api/members/${memberGreen.id}`,
+    );
+    assert.equal(greenAfterCancel.data.evaluation.overallStatus, 'green');
+
+    const auditRes = await adminClient.json<AuditLogEntry[]>('GET', '/api/inspections/audit');
+    assert.equal(auditRes.status, 200);
+    assert.ok(
+      auditRes.data.some(
+        (a) => a.action === 'cancel_inspection' && a.entity_id === tempInspRes.data.id,
+      ),
+    );
+
     // Member with key number 78 (automatic restriction) + valid C1
     const createYellow78 = await adminClient.json<EvaluatedMember>('POST', '/api/members', {
       first_name: 'Bernd',
-      last_name: 'Gelb',
+      last_name: 'Automatik',
       personnel_number: '102',
       unit: 'Löschzug 1',
       email: 'bernd@feuerwehr.local',
@@ -352,7 +486,7 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
       card_expires_at: futureDate,
       global_key_numbers: ['78'],
       licenses: [
-        { license_class: 'B', issued_at: pastDate, expires_at: null, key_numbers: ['78'] },
+        { license_class: 'B', issued_at: addMonthsIso(today, -36), expires_at: null, key_numbers: ['78'] },
         { license_class: 'C1', issued_at: pastDate, expires_at: futureDate, key_numbers: [] },
       ],
     });
@@ -367,6 +501,47 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     ).data;
     assert.equal(memberYellow78.evaluation.overallStatus, 'green');
     assert.ok(memberYellow78.global_key_numbers.includes('78'));
+
+    // Member with C1 expiring soon (within 90d warn window) -> yellow on manual vehicle
+    const soonExpiringDate = addMonthsIso(today, 1);
+    const createYellowExpiring = await adminClient.json<EvaluatedMember>('POST', '/api/members', {
+      first_name: 'Berta',
+      last_name: 'BaldAblauf',
+      personnel_number: '105',
+      unit: 'Löschzug 1',
+      status: 'active',
+      card_expires_at: futureDate,
+      licenses: [
+        { license_class: 'B', issued_at: addMonthsIso(today, -36), expires_at: null, key_numbers: [] },
+        { license_class: 'C1', issued_at: pastDate, expires_at: soonExpiringDate, key_numbers: [] },
+      ],
+    });
+    assert.equal(createYellowExpiring.status, 201);
+    await inspectorClient.json('POST', '/api/inspections', {
+      member_id: createYellowExpiring.data.id,
+      inspected_at: today,
+      result: 'ok',
+    });
+
+    // Member with CE + key 79 (#2: covers C1/C1E, NOT C or unrestricted CE)
+    const createCe79 = await adminClient.json<EvaluatedMember>('POST', '/api/members', {
+      first_name: 'Gustav',
+      last_name: 'Besitzstand',
+      personnel_number: '106',
+      unit: 'Löschzug 1',
+      status: 'active',
+      card_expires_at: futureDate,
+      licenses: [
+        { license_class: 'B', issued_at: addMonthsIso(today, -36), expires_at: null, key_numbers: [] },
+        { license_class: 'CE', issued_at: addMonthsIso(today, -36), expires_at: futureDate, key_numbers: ['79'] },
+      ],
+    });
+    assert.equal(createCe79.status, 201);
+    await inspectorClient.json('POST', '/api/inspections', {
+      member_id: createCe79.data.id,
+      inspected_at: today,
+      result: 'ok',
+    });
 
     // Member with expired C1 class
     const createRedExpired = await adminClient.json<EvaluatedMember>('POST', '/api/members', {
@@ -418,7 +593,7 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.equal(memberRedBan.evaluation.banCurrentlyActive, true);
     assert.equal(memberRedBan.evaluation.overallStatus, 'red');
 
-    // Manual vehicle requiring ['C1', 'FW_750'] -> check 3-tier traffic light
+    // Manual vehicle requiring ['C1', 'FW_750'] -> check 3-tier traffic light + SZ 78 = red (#1)
     const createVehicle = await adminClient.json<EvaluatedVehicle>('POST', '/api/vehicles', {
       name: 'TSF-W',
       call_sign: 'Florian Muster 44',
@@ -432,10 +607,78 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
 
     const byId = new Map(testVehicle.drivers.map((d) => [d.memberId, d]));
     assert.equal(byId.get(memberGreen.id)?.status, 'green');
-    assert.equal(byId.get(memberYellow78.id)?.status, 'yellow');
+    assert.equal(byId.get(createYellowExpiring.data.id)?.status, 'yellow');
+    assert.equal(byId.get(memberYellow78.id)?.status, 'red');
     assert.ok(byId.get(memberYellow78.id)?.reasons.some((r) => r.includes('78')));
+    assert.equal(byId.get(createCe79.data.id)?.status, 'green');
     assert.equal(byId.get(memberRedExpired.id)?.status, 'red');
     assert.equal(byId.get(memberRedBan.id)?.status, 'red');
+
+    // Automatic vehicle with requires_briefing (#1, #17, #19)
+    const autoVehicleRes = await adminClient.json<EvaluatedVehicle>('POST', '/api/vehicles', {
+      name: 'MTW Automatik',
+      call_sign: 'Florian Muster 19',
+      unit: 'Löschzug 1',
+      required_classes: ['B'],
+      is_automatic: true,
+      requires_briefing: true,
+    });
+    assert.equal(autoVehicleRes.status, 201);
+    const autoById = new Map(autoVehicleRes.data.drivers.map((d) => [d.memberId, d]));
+    // On automatic vehicle, SZ 78 is NOT red (yellow here only because briefing missing)
+    assert.notEqual(autoById.get(memberYellow78.id)?.status, 'red');
+
+    const beforeBriefing = await viewerClient.json<MemberVehicleSummary[]>(
+      'GET',
+      `/api/members/${memberGreen.id}/vehicles`,
+    );
+    assert.equal(beforeBriefing.status, 200);
+    const mtvBefore = beforeBriefing.data.find((v) => v.vehicleId === autoVehicleRes.data.id);
+    assert.ok(mtvBefore);
+    assert.equal(mtvBefore.isBriefed, false);
+    assert.equal(mtvBefore.status, 'yellow');
+    assert.ok(mtvBefore.reasons.some((r) => r.includes('Einweisung')));
+
+    const putBriefing = await inspectorClient.json<EvaluatedMember>(
+      'PUT',
+      `/api/members/${memberGreen.id}/briefings`,
+      { vehicleIds: [autoVehicleRes.data.id] },
+    );
+    assert.equal(putBriefing.status, 200);
+    assert.ok(putBriefing.data.briefed_vehicle_ids.includes(autoVehicleRes.data.id));
+
+    const afterBriefing = await viewerClient.json<MemberVehicleSummary[]>(
+      'GET',
+      `/api/members/${memberGreen.id}/vehicles`,
+    );
+    assert.equal(afterBriefing.status, 200);
+    const mtvAfter = afterBriefing.data.find((v) => v.vehicleId === autoVehicleRes.data.id);
+    assert.ok(mtvAfter);
+    assert.equal(mtvAfter.isBriefed, true);
+    assert.equal(mtvAfter.status, 'green');
+
+    // CE 79 must NOT cover C or unrestricted CE (#2)
+    const heavyVehicleC = await adminClient.json<EvaluatedVehicle>('POST', '/api/vehicles', {
+      name: 'HLF 20 (C)',
+      required_classes: ['C'],
+      is_automatic: true,
+    });
+    assert.equal(heavyVehicleC.status, 201);
+    assert.equal(
+      heavyVehicleC.data.drivers.some((d) => d.memberId === createCe79.data.id),
+      false,
+    );
+
+    const heavyVehicleCE = await adminClient.json<EvaluatedVehicle>('POST', '/api/vehicles', {
+      name: 'AB-Rüst (CE)',
+      required_classes: ['CE'],
+      is_automatic: true,
+    });
+    assert.equal(heavyVehicleCE.status, 201);
+    assert.equal(
+      heavyVehicleCE.data.drivers.some((d) => d.memberId === createCe79.data.id),
+      false,
+    );
 
     // Summary mode omits drivers array while preserving exact counts; :id lazy-loads drivers
     const summaryRes = await viewerClient.json<EvaluatedVehicle[]>('GET', '/api/vehicles?summary=1');
@@ -457,6 +700,17 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
   // 3. CSV Export & Import Roundtrip
   // =========================================================================
   await t.test('3. CSV Export & Import Roundtrip', async () => {
+    // Formula injection neutralization (#6)
+    const formulaMember = await adminClient.json<EvaluatedMember>('POST', '/api/members', {
+      first_name: 'Formula',
+      last_name: '-Minus',
+      personnel_number: '+999',
+      unit: '=CMD()',
+      license_number: '@LIC',
+      status: 'active',
+    });
+    assert.equal(formulaMember.status, 201);
+
     const expRes = await viewerClient.request('GET', '/api/export/members.csv');
     assert.equal(expRes.status, 200);
     // Check UTF-8 BOM (EF BB BF)
@@ -467,6 +721,12 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.ok(csvText.includes(';'));
     assert.ok(csvText.includes('Anna;Gruen'));
     assert.ok(csvText.includes('FW_750'));
+    assert.ok(csvText.includes("'+999"));
+    assert.ok(csvText.includes("'-Minus"));
+    assert.ok(csvText.includes("'=CMD()"));
+    assert.ok(csvText.includes("'@LIC"));
+
+    await adminClient.json('DELETE', `/api/members/${formulaMember.data.id}`);
 
     const importCsv = [
       'Personalnummer;Vorname;Nachname;Einheit;Email;Status;Klassen',
@@ -548,6 +808,8 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.ok(authIcs.includes('BEGIN:VCALENDAR'));
     assert.ok(authIcs.includes('BEGIN:VEVENT'));
     assert.ok(authIcs.includes('END:VCALENDAR'));
+    // Privacy (#8): license_number must NOT appear in iCal feed
+    assert.ok(!authIcs.includes('B0101'));
 
     const settingsRes = await adminClient.json<AppSettingsPublic>('GET', '/api/settings');
     assert.equal(settingsRes.status, 200);
@@ -559,6 +821,7 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     const tokenIcs = tokenFeed.buffer.toString('utf8');
     assert.ok(tokenIcs.includes('BEGIN:VCALENDAR'));
     assert.ok(tokenIcs.includes('BEGIN:VEVENT'));
+    assert.ok(!tokenIcs.includes('B0101'));
 
     const invalidFeed = await anonClient.request('GET', '/api/calendar/invalid-token-999.ics');
     assert.ok(invalidFeed.status === 403 || invalidFeed.status === 404);
@@ -704,28 +967,58 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
       const publicSettings = JSON.parse(settingsText) as AppSettingsPublic;
       assert.equal(publicSettings.jmap.hasToken, true);
 
-      // Test mail with JMAP override
-      const overrideToken = 'override-jmap-token-456';
-      const testMailRes = await adminClient.json<{ ok: boolean; message: string }>(
-        'POST',
-        '/api/notifications/test',
-        {
-          toEmail: 'empfaenger@feuerwehr.local',
-          override: {
-            provider: 'jmap',
-            jmap: {
-              sessionUrl,
-              authType: 'bearer',
-              username: '',
-              token: overrideToken,
-              password: '',
-              fromEmail: 'kommandant@feuerwehr.local',
-              fromName: 'FF Musterstadt',
-              accountId: '',
-            },
+      // SSRF protection (#5): http://127.0.0.1 is blocked by default
+      delete process.env.ALLOW_INSECURE_JMAP_URLS;
+      delete process.env.ALLOW_PRIVATE_JMAP_URLS;
+      const blockedRes = await adminClient.json('POST', '/api/notifications/test', {
+        toEmail: 'empfaenger@feuerwehr.local',
+        override: {
+          provider: 'jmap',
+          jmap: {
+            sessionUrl,
+            authType: 'bearer',
+            username: '',
+            token: 'override-jmap-token-456',
+            password: '',
+            fromEmail: 'kommandant@feuerwehr.local',
+            fromName: 'FF Musterstadt',
+            accountId: '',
           },
         },
-      );
+      });
+      assert.ok(blockedRes.status >= 400);
+      assert.equal(recorded.sessionAuthHeaders.length, 0);
+
+      // Test mail with JMAP override (explicitly allow local HTTP mock for test only)
+      const overrideToken = 'override-jmap-token-456';
+      process.env.ALLOW_INSECURE_JMAP_URLS = 'true';
+      process.env.ALLOW_PRIVATE_JMAP_URLS = 'true';
+      let testMailRes!: { status: number; headers: Headers; data: { ok: boolean; message: string } };
+      try {
+        testMailRes = await adminClient.json<{ ok: boolean; message: string }>(
+          'POST',
+          '/api/notifications/test',
+          {
+            toEmail: 'empfaenger@feuerwehr.local',
+            override: {
+              provider: 'jmap',
+              jmap: {
+                sessionUrl,
+                authType: 'bearer',
+                username: '',
+                token: overrideToken,
+                password: '',
+                fromEmail: 'kommandant@feuerwehr.local',
+                fromName: 'FF Musterstadt',
+                accountId: '',
+              },
+            },
+          },
+        );
+      } finally {
+        delete process.env.ALLOW_INSECURE_JMAP_URLS;
+        delete process.env.ALLOW_PRIVATE_JMAP_URLS;
+      }
       assert.equal(testMailRes.status, 200);
       assert.equal(testMailRes.data.ok, true);
 
@@ -776,14 +1069,31 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
 
     const jsonBackupRes = await adminClient.json<{
       version: number;
-      members: Array<{ id: number }>;
-      member_licenses: Array<unknown>;
+      members: Array<{ id: number; card_expires_at?: string | null }>;
+      member_licenses: Array<{ license_class: string }>;
       inspections: Array<unknown>;
       vehicles: Array<unknown>;
     }>('GET', '/api/admin/backup/json');
     assert.equal(jsonBackupRes.status, 200);
     assert.ok(jsonBackupRes.data.members.length >= 5);
     const backupPayload = jsonBackupRes.data;
+
+    // Backup/Restore validation (#7): invalid date or unknown license_class -> 400
+    const badDateBackup = structuredClone(backupPayload);
+    badDateBackup.members[0].card_expires_at = '2026-99-99';
+    assert.equal(
+      (await adminClient.json('POST', '/api/admin/restore/json', badDateBackup)).status,
+      400,
+    );
+
+    const badClassBackup = structuredClone(backupPayload);
+    if (badClassBackup.member_licenses.length > 0) {
+      badClassBackup.member_licenses[0].license_class = 'UNKNOWN_CLASS';
+      assert.equal(
+        (await adminClient.json('POST', '/api/admin/restore/json', badClassBackup)).status,
+        400,
+      );
+    }
 
     // Delete a member and verify it is gone
     const delRes = await adminClient.json('DELETE', `/api/members/${memberGreen.id}`);

@@ -11,7 +11,6 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
-import type { EvaluatedMember } from '@shared/types';
 import { formatDateDe, LICENSE_CLASS_SHORT_LABELS } from '@shared/licenseRules';
 import { api, ApiError, type DashboardSummary } from '../api';
 import { InspectionModal } from '../components/InspectionModal';
@@ -24,7 +23,6 @@ export function DashboardPage() {
   const { canEditMembers, canInspect } = useAuth();
   const { showToast } = useToast();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [allMembers, setAllMembers] = useState<EvaluatedMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,12 +33,8 @@ export function DashboardPage() {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [dash, members] = await Promise.all([
-        api.getDashboard(),
-        api.listMembers({ status: 'active' }),
-      ]);
+      const dash = await api.getDashboard();
       setSummary(dash);
-      setAllMembers(members);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Dashboard konnte nicht geladen werden.';
       setError(msg);
@@ -121,7 +115,10 @@ export function DashboardPage() {
 
       {/* KPI-Karten */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Link to="/members" className="card p-4 transition hover:border-slate-300 dark:hover:border-slate-700">
+        <Link
+          to="/members"
+          className="card p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Aktive Kameraden
@@ -142,7 +139,10 @@ export function DashboardPage() {
           </div>
         </Link>
 
-        <Link to="/inspections" className="card p-4 transition hover:border-slate-300 dark:hover:border-slate-700">
+        <Link
+          to="/inspections"
+          className="card p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Kontrollen fällig
@@ -159,8 +159,8 @@ export function DashboardPage() {
         </Link>
 
         <Link
-          to="/members?trafficLight=yellow"
-          className="card p-4 transition hover:border-slate-300 dark:hover:border-slate-700"
+          to="/members?trafficLight=attention"
+          className="card p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -174,7 +174,10 @@ export function DashboardPage() {
           </p>
         </Link>
 
-        <Link to="/vehicles" className="card p-4 transition hover:border-slate-300 dark:hover:border-slate-700">
+        <Link
+          to="/vehicles"
+          className="card p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Fahrzeuge & Sperren
@@ -205,7 +208,10 @@ export function DashboardPage() {
                 Sortiert nach Dringlichkeit (Sperren, abgelaufene Klassen, fällige Kontrollen)
               </p>
             </div>
-            <Link to="/inspections" className="text-xs font-semibold text-fire-600 hover:underline dark:text-fire-400">
+            <Link
+              to="/inspections"
+              className="text-xs font-semibold text-fire-600 hover:underline dark:text-fire-400"
+            >
               Alle Kontrollen
             </Link>
           </div>
@@ -290,7 +296,10 @@ export function DashboardPage() {
                 Verfügbare Maschinisten / Fahrer je Fahrzeug
               </p>
             </div>
-            <Link to="/vehicles" className="text-xs font-semibold text-fire-600 hover:underline dark:text-fire-400">
+            <Link
+              to="/vehicles"
+              className="text-xs font-semibold text-fire-600 hover:underline dark:text-fire-400"
+            >
               Details
             </Link>
           </div>
@@ -305,7 +314,7 @@ export function DashboardPage() {
                 <Link
                   key={vehicle.id}
                   to="/vehicles"
-                  className="block px-5 py-3.5 transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  className="block px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -345,7 +354,7 @@ export function DashboardPage() {
 
       <InspectionModal
         open={inspectOpen}
-        members={allMembers}
+        members={attentionMembers}
         initialMemberId={inspectMemberId}
         onClose={() => setInspectOpen(false)}
         onSaved={() => void loadData()}

@@ -47,17 +47,19 @@ export function MembersPage() {
   const [inspectOpen, setInspectOpen] = useState(false);
   const [inspectMemberId, setInspectMemberId] = useState<number | null>(null);
 
+  const activeFilters = {
+    search: search.trim() || undefined,
+    unit: unit || undefined,
+    status: status || undefined,
+    licenseClass: licenseClass || undefined,
+    trafficLight: trafficLight || undefined,
+  };
+
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
       const [list, unitList] = await Promise.all([
-        api.listMembers({
-          search: search.trim() || undefined,
-          unit: unit || undefined,
-          status: status || undefined,
-          licenseClass: licenseClass || undefined,
-          trafficLight: trafficLight || undefined,
-        }),
+        api.listMembers(activeFilters),
         api.listUnits(),
       ]);
       setMembers(list);
@@ -99,7 +101,7 @@ export function MembersPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a href={api.urls.membersCsv()} className="btn-secondary">
+          <a href={api.urls.membersCsv(activeFilters)} className="btn-secondary">
             <Download className="h-4 w-4" />
             <span>CSV-Export</span>
           </a>
@@ -173,6 +175,7 @@ export function MembersPage() {
               aria-label="Ampel filtern"
             >
               <option value="">Alle Ampeln</option>
+              <option value="attention">Handlungsbedarf (Gelb + Rot)</option>
               <option value="green">Grün</option>
               <option value="yellow">Gelb</option>
               <option value="red">Rot</option>
@@ -216,7 +219,11 @@ export function MembersPage() {
                       {m.last_name}, {m.first_name}
                     </Link>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {[m.unit, m.personnel_number ? `Pers.-Nr. ${m.personnel_number}` : null, STATUS_LABELS[m.status]]
+                      {[
+                        m.unit,
+                        m.personnel_number ? `Pers.-Nr. ${m.personnel_number}` : null,
+                        STATUS_LABELS[m.status],
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </p>
@@ -295,7 +302,9 @@ export function MembersPage() {
                     <th className="px-4 py-3 text-left font-semibold">Name</th>
                     <th className="px-4 py-3 text-left font-semibold">Einheit</th>
                     <th className="px-4 py-3 text-left font-semibold">Klassen</th>
-                    <th className="px-4 py-3 text-left font-semibold">Letzte / Nächste Kontrolle</th>
+                    <th className="px-4 py-3 text-left font-semibold">
+                      Letzte / Nächste Kontrolle
+                    </th>
                     <th className="px-4 py-3 text-left font-semibold">Ampel & Hinweise</th>
                     <th className="px-4 py-3 text-right font-semibold">Aktionen</th>
                   </tr>
@@ -351,7 +360,10 @@ export function MembersPage() {
                         <div className="space-y-1">
                           <TrafficLightBadge status={m.evaluation.overallStatus} compact />
                           {m.evaluation.reasons.length > 0 && (
-                            <p className="max-w-xs truncate text-xs text-slate-500 dark:text-slate-400" title={m.evaluation.reasons.join(' | ')}>
+                            <p
+                              className="max-w-xs truncate text-xs text-slate-500 dark:text-slate-400"
+                              title={m.evaluation.reasons.join(' | ')}
+                            >
                               {m.evaluation.reasons[0]}
                             </p>
                           )}

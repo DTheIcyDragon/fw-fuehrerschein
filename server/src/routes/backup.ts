@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import express, { Router } from 'express';
+import { ALL_LICENSE_CLASSES, isValidIsoDate } from '../../../shared/licenseRules.js';
 import { type AppDatabase, backupDatabaseToFile } from '../db/database.js';
 import { requireRole } from '../middleware/auth.js';
 import type { SettingsService } from '../services/settings.js';
@@ -17,6 +18,7 @@ interface BackupMemberRow {
   unit: string | null;
   email: string | null;
   phone: string | null;
+  birth_date?: string | null;
   status: string;
   license_number: string | null;
   card_issued_at: string | null;
@@ -51,6 +53,12 @@ interface BackupInspectionRow {
   result: string;
   notes: string | null;
   created_at: string;
+  cancelled_at?: string | null;
+  cancelled_by_name?: string | null;
+  cancel_reason?: string | null;
+  checked_eu_card?: number;
+  checked_fw_license?: number;
+  checked_restrictions?: number;
 }
 
 interface BackupVehicleRow {
@@ -61,11 +69,23 @@ interface BackupVehicleRow {
   unit: string | null;
   required_classes_json: string;
   is_automatic: number;
+  requires_trailer?: number;
+  requires_briefing?: number;
   notes: string | null;
   active: number;
   created_at: string;
   updated_at: string;
 }
+
+interface BackupVehicleBriefingRow {
+  id?: number;
+  member_id: number;
+  vehicle_id: number;
+  briefed_at: string | null;
+  notes: string | null;
+}
+
+const VALID_LICENSE_CLASSES = new Set<string>(ALL_LICENSE_CLASSES);
 
 const SAFE_SETTINGS_KEYS = [
   'department_name',
@@ -108,6 +128,156 @@ function safeJsonArray(value: unknown, fallback = '[]'): string {
   return fallback;
 }
 
+function validateOptionalIsoDate(value: unknown, label: string): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (!isValidIsoDate(trimmed)) {
+    throw new HttpError(400, `Ungültiges Datum (${label}): "${trimmed}" (erwartet YYYY-MM-DD)`);
+  }
+  return trimmed;
+}
+
+function validateRequiredIsoDate(value: unknown, label: string): string {
+  const trimmed = value === null || value === undefined ? '' : String(value).trim();
+  if (!trimmed || !isValidIsoDate(trimmed)) {
+    throw new HttpError(400, `Ungültiges Datum (${label}): "${trimmed}" (erwartet YYYY-MM-DD)`);
+  }
+  return trimmed;
+}
+
+function validateOptionalIsoTimestamp(value: unknown, label: string): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    throw new HttpError(400, `Ungültiges Datum/Zeitstempel (${label}): "${trimmed}"`);
+  }
+  if (isValidIsoDate(trimmed)) return trimmed;
+  if (Number.isNaN(Date.parse(trimmed))) {
+    throw new HttpError(400, `Ungültiges Datum/Zeitstempel (${label}): "${trimmed}"`);
+  }
+  return trimmed;
+}
+
+function validateBackupRows(data: {
+  members: unknown[];
+  memberLicenses: unknown[];
+  inspections: unknown[];
+  vehicles: unknown[];
+  vehicleBriefings?: unknown[];
+}): {
+  members: Array<Record<string, unknown>>;
+  memberLicenses: Array<Record<string, unknown>>;
+  inspections: Array<Record<string, unknown>>;
+  vehicles: Array<Record<string, unknown>>;
+  vehicleBriefings: Array<Record<string, unknown>>;
+} {
+  const { members, memberLicenses, inspections, vehicles, vehicleBriefings } = data;
+  const memberIdSet = new Set<number>();
+
+  for (const m of members) {
+    if (!m || typeof m !== 'object') {
+      throw new HttpError(400, 'Ungültiger Kamerad-Eintrag im Backup');
+    }
+    const rec = m as Record<string, unknown>;
+    const id = Number(rec.id);
+    if (
+      !Number.isInteger(id) ||
+      id <= 0 ||
+      !String(rec.first_name ?? '').trim() ||
+      !String(rec.last_name ?? '').trim()
+    ) {
+      throw new HttpError(
+        400,
+        'Kamerad-Eintrag im Backup benötigt gültige id, first_name und last_name',
+      );
+    }
+    validateOptionalIsoDate(rec.birth_date, 'birth_date');
+    validateOptionalIsoDate(rec.card_issued_at, 'card_issued_at');
+    validateOptionalIsoDate(rec.card_expires_at, 'card_expires_at');
+    validateOptionalIsoDate(rec.ban_from, 'ban_from');
+    validateOptionalIsoDate(rec.ban_until, 'ban_until');
+    memberIdSet.add(id);
+  }
+
+  for (const l of memberLicenses) {
+    if (!l || typeof l !== 'object') {
+      throw new HttpError(400, 'Ungültiger Führerschein-Eintrag im Backup');
+    }
+    const rec = l as Record<string, unknown>;
+    const licenseClass = String(rec.license_class ?? '').trim();
+    if (!memberIdSet.has(Number(rec.member_id)) || !licenseClass) {
+      throw new HttpError(
+        400,
+        'Führerschein-Eintrag verweist auf ungültigen Kameraden oder fehlende Klasse',
+      );
+    }
+    if (!VALID_LICENSE_CLASSES.has(licenseClass)) {
+      throw new HttpError(400, `Unbekannte Führerscheinklasse im Backup: "${licenseClass}"`);
+    }
+    validateOptionalIsoDate(rec.issued_at, `issued_at (${licenseClass})`);
+    validateOptionalIsoDate(rec.expires_at, `expires_at (${licenseClass})`);
+  }
+
+  for (const insp of inspections) {
+    if (!insp || typeof insp !== 'object') {
+      throw new HttpError(400, 'Ungültiger Kontroll-Eintrag im Backup');
+    }
+    const rec = insp as Record<string, unknown>;
+    if (!memberIdSet.has(Number(rec.member_id))) {
+      throw new HttpError(400, 'Kontroll-Eintrag verweist auf ungültigen Kameraden');
+    }
+    validateRequiredIsoDate(rec.inspected_at, 'inspected_at');
+    validateOptionalIsoTimestamp(rec.cancelled_at, 'cancelled_at');
+    if (rec.result !== 'ok' && rec.result !== 'issue') {
+      throw new HttpError(400, 'Kontroll-Eintrag hat ungültiges result (ok oder issue erwartet)');
+    }
+  }
+
+  const vehicleIdSet = new Set<number>();
+  for (const v of vehicles) {
+    if (!v || typeof v !== 'object') {
+      throw new HttpError(400, 'Ungültiger Fahrzeug-Eintrag im Backup');
+    }
+    const rec = v as Record<string, unknown>;
+    if (!String(rec.name ?? '').trim()) {
+      throw new HttpError(400, 'Fahrzeug-Eintrag benötigt einen Namen');
+    }
+    if (rec.id !== undefined && Number.isInteger(Number(rec.id))) {
+      vehicleIdSet.add(Number(rec.id));
+    }
+  }
+
+  const validBriefings: Array<Record<string, unknown>> = [];
+  if (vehicleBriefings !== undefined) {
+    for (const b of vehicleBriefings) {
+      if (!b || typeof b !== 'object') {
+        throw new HttpError(400, 'Ungültiger Fahrzeug-Einweisungs-Eintrag im Backup');
+      }
+      const rec = b as Record<string, unknown>;
+      const mId = Number(rec.member_id);
+      const vId = Number(rec.vehicle_id);
+      if (!memberIdSet.has(mId) || !Number.isInteger(vId) || vId <= 0) {
+        throw new HttpError(400, 'Fahrzeug-Einweisung verweist auf ungültigen Kameraden oder Fahrzeug');
+      }
+      if (vehicleIdSet.size > 0 && !vehicleIdSet.has(vId)) {
+        throw new HttpError(400, `Fahrzeug-Einweisung verweist auf unbekanntes Fahrzeug #${vId}`);
+      }
+      validateOptionalIsoDate(rec.briefed_at, 'briefed_at');
+      validBriefings.push(rec);
+    }
+  }
+
+  return {
+    members: members as Array<Record<string, unknown>>,
+    memberLicenses: memberLicenses as Array<Record<string, unknown>>,
+    inspections: inspections as Array<Record<string, unknown>>,
+    vehicles: vehicles as Array<Record<string, unknown>>,
+    vehicleBriefings: validBriefings,
+  };
+}
+
 function restoreBackupDataAtomically(
   deps: { db: AppDatabase; settings: SettingsService },
   data: {
@@ -115,15 +285,17 @@ function restoreBackupDataAtomically(
     memberLicenses: Array<Record<string, unknown>>;
     inspections: Array<Record<string, unknown>>;
     vehicles: Array<Record<string, unknown>>;
+    vehicleBriefings: Array<Record<string, unknown>>;
     settingsObj?: Record<string, unknown>;
   },
 ): { members: number; member_licenses: number; inspections: number; vehicles: number } {
-  const { members, memberLicenses, inspections, vehicles, settingsObj } = data;
+  const { members, memberLicenses, inspections, vehicles, vehicleBriefings, settingsObj } = data;
   const userExistsStmt = deps.db.prepare('SELECT id FROM users WHERE id = ?');
   const now = new Date().toISOString();
 
   deps.db.exec('BEGIN IMMEDIATE');
   try {
+    deps.db.exec('DELETE FROM vehicle_briefings');
     deps.db.exec('DELETE FROM inspections');
     deps.db.exec('DELETE FROM member_licenses');
     deps.db.exec('DELETE FROM members');
@@ -131,11 +303,11 @@ function restoreBackupDataAtomically(
 
     const insertMember = deps.db.prepare(`
       INSERT INTO members (
-        id, first_name, last_name, personnel_number, unit, email, phone, status,
+        id, first_name, last_name, personnel_number, unit, email, phone, birth_date, status,
         license_number, card_issued_at, card_expires_at, issuing_authority,
         global_key_numbers_json, ban_active, ban_from, ban_until, ban_reason,
         notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of members) {
@@ -149,15 +321,16 @@ function restoreBackupDataAtomically(
         m.unit ? String(m.unit) : null,
         m.email ? String(m.email) : null,
         m.phone ? String(m.phone) : null,
+        validateOptionalIsoDate(m.birth_date, 'birth_date'),
         status,
         m.license_number ? String(m.license_number) : null,
-        m.card_issued_at ? String(m.card_issued_at) : null,
-        m.card_expires_at ? String(m.card_expires_at) : null,
+        validateOptionalIsoDate(m.card_issued_at, 'card_issued_at'),
+        validateOptionalIsoDate(m.card_expires_at, 'card_expires_at'),
         m.issuing_authority ? String(m.issuing_authority) : null,
         safeJsonArray(m.global_key_numbers ?? m.global_key_numbers_json),
         m.ban_active ? 1 : 0,
-        m.ban_from ? String(m.ban_from) : null,
-        m.ban_until ? String(m.ban_until) : null,
+        validateOptionalIsoDate(m.ban_from, 'ban_from'),
+        validateOptionalIsoDate(m.ban_until, 'ban_until'),
         m.ban_reason ? String(m.ban_reason) : null,
         m.notes ? String(m.notes) : null,
         m.created_at ? String(m.created_at) : now,
@@ -173,9 +346,9 @@ function restoreBackupDataAtomically(
     for (const l of memberLicenses) {
       insertLicense.run(
         Number(l.member_id),
-        String(l.license_class),
-        l.issued_at ? String(l.issued_at) : null,
-        l.expires_at ? String(l.expires_at) : null,
+        String(l.license_class).trim(),
+        validateOptionalIsoDate(l.issued_at, 'issued_at'),
+        validateOptionalIsoDate(l.expires_at, 'expires_at'),
         safeJsonArray(l.key_numbers ?? l.key_numbers_json),
         l.notes ? String(l.notes) : null,
       );
@@ -183,8 +356,10 @@ function restoreBackupDataAtomically(
 
     const insertInspection = deps.db.prepare(`
       INSERT INTO inspections (
-        id, member_id, inspected_at, inspector_user_id, inspector_name, result, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, member_id, inspected_at, inspector_user_id, inspector_name, result, notes, created_at,
+        cancelled_at, cancelled_by_name, cancel_reason,
+        checked_eu_card, checked_fw_license, checked_restrictions
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const insp of inspections) {
@@ -198,20 +373,26 @@ function restoreBackupDataAtomically(
       insertInspection.run(
         insp.id !== undefined && Number.isInteger(Number(insp.id)) ? Number(insp.id) : null,
         Number(insp.member_id),
-        String(insp.inspected_at),
+        validateRequiredIsoDate(insp.inspected_at, 'inspected_at'),
         inspectorUserId,
         String(insp.inspector_name ?? 'System'),
         String(insp.result),
         insp.notes ? String(insp.notes) : null,
         insp.created_at ? String(insp.created_at) : now,
+        validateOptionalIsoTimestamp(insp.cancelled_at, 'cancelled_at'),
+        insp.cancelled_by_name ? String(insp.cancelled_by_name) : null,
+        insp.cancel_reason ? String(insp.cancel_reason) : null,
+        insp.checked_eu_card === undefined ? 1 : insp.checked_eu_card ? 1 : 0,
+        insp.checked_fw_license ? 1 : 0,
+        insp.checked_restrictions ? 1 : 0,
       );
     }
 
     const insertVehicle = deps.db.prepare(`
       INSERT INTO vehicles (
         id, name, call_sign, license_plate, unit, required_classes_json,
-        is_automatic, notes, active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_automatic, requires_trailer, requires_briefing, notes, active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const v of vehicles) {
@@ -223,11 +404,28 @@ function restoreBackupDataAtomically(
         v.unit ? String(v.unit) : null,
         safeJsonArray(v.required_classes ?? v.required_classes_json),
         v.is_automatic ? 1 : 0,
+        v.requires_trailer ? 1 : 0,
+        v.requires_briefing ? 1 : 0,
         v.notes ? String(v.notes) : null,
         v.active === false || v.active === 0 ? 0 : 1,
         v.created_at ? String(v.created_at) : now,
         v.updated_at ? String(v.updated_at) : now,
       );
+    }
+
+    if (vehicleBriefings.length > 0) {
+      const insertBriefing = deps.db.prepare(`
+        INSERT OR IGNORE INTO vehicle_briefings (member_id, vehicle_id, briefed_at, notes)
+        VALUES (?, ?, ?, ?)
+      `);
+      for (const b of vehicleBriefings) {
+        insertBriefing.run(
+          Number(b.member_id),
+          Number(b.vehicle_id),
+          validateOptionalIsoDate(b.briefed_at, 'briefed_at'),
+          b.notes ? String(b.notes) : null,
+        );
+      }
     }
 
     if (settingsObj) {
@@ -311,6 +509,9 @@ export function createBackupRouter(deps: {
         .prepare('SELECT * FROM inspections ORDER BY id ASC')
         .all() as unknown as BackupInspectionRow[];
       const vehiclesRaw = deps.db.prepare('SELECT * FROM vehicles ORDER BY id ASC').all() as unknown as BackupVehicleRow[];
+      const briefingsRaw = deps.db
+        .prepare('SELECT * FROM vehicle_briefings ORDER BY id ASC')
+        .all() as unknown as BackupVehicleBriefingRow[];
 
       const pub = deps.settings.getPublicSettings();
       const nonSensitiveSettings = {
@@ -334,6 +535,7 @@ export function createBackupRouter(deps: {
         exported_at: new Date().toISOString(),
         members: membersRaw.map((m) => ({
           ...m,
+          birth_date: m.birth_date ?? null,
           ban_active: Boolean(m.ban_active),
           global_key_numbers: JSON.parse(m.global_key_numbers_json || '[]') as string[],
         })),
@@ -341,13 +543,24 @@ export function createBackupRouter(deps: {
           ...l,
           key_numbers: JSON.parse(l.key_numbers_json || '[]') as string[],
         })),
-        inspections: inspectionsRaw,
+        inspections: inspectionsRaw.map((insp) => ({
+          ...insp,
+          cancelled_at: insp.cancelled_at ?? null,
+          cancelled_by_name: insp.cancelled_by_name ?? null,
+          cancel_reason: insp.cancel_reason ?? null,
+          checked_eu_card: insp.checked_eu_card === undefined ? true : Boolean(insp.checked_eu_card),
+          checked_fw_license: Boolean(insp.checked_fw_license),
+          checked_restrictions: Boolean(insp.checked_restrictions),
+        })),
         vehicles: vehiclesRaw.map((v) => ({
           ...v,
           is_automatic: Boolean(v.is_automatic),
+          requires_trailer: Boolean(v.requires_trailer),
+          requires_briefing: Boolean(v.requires_briefing),
           active: Boolean(v.active),
           required_classes: JSON.parse(v.required_classes_json || '[]') as string[],
         })),
+        vehicle_briefings: briefingsRaw,
         settings: nonSensitiveSettings,
       };
 
@@ -369,6 +582,7 @@ export function createBackupRouter(deps: {
       const memberLicenses = body.member_licenses;
       const inspections = body.inspections;
       const vehicles = body.vehicles;
+      const vehicleBriefings = body.vehicle_briefings;
 
       if (
         !Array.isArray(members) ||
@@ -382,57 +596,20 @@ export function createBackupRouter(deps: {
         );
       }
 
-      const memberIdSet = new Set<number>();
-      for (const m of members) {
-        if (!m || typeof m !== 'object') {
-          throw new HttpError(400, 'Ungültiger Kamerad-Eintrag im Backup');
-        }
-        const rec = m as Record<string, unknown>;
-        const id = Number(rec.id);
-        if (!Number.isInteger(id) || id <= 0 || !String(rec.first_name ?? '').trim() || !String(rec.last_name ?? '').trim()) {
-          throw new HttpError(400, 'Kamerad-Eintrag im Backup benötigt gültige id, first_name und last_name');
-        }
-        memberIdSet.add(id);
+      if (vehicleBriefings !== undefined && !Array.isArray(vehicleBriefings)) {
+        throw new HttpError(400, 'vehicle_briefings im Backup-JSON muss ein Array sein.');
       }
 
-      for (const l of memberLicenses) {
-        if (!l || typeof l !== 'object') {
-          throw new HttpError(400, 'Ungültiger Führerschein-Eintrag im Backup');
-        }
-        const rec = l as Record<string, unknown>;
-        if (!memberIdSet.has(Number(rec.member_id)) || !String(rec.license_class ?? '').trim()) {
-          throw new HttpError(400, 'Führerschein-Eintrag verweist auf ungültigen Kameraden oder fehlende Klasse');
-        }
-      }
-
-      for (const insp of inspections) {
-        if (!insp || typeof insp !== 'object') {
-          throw new HttpError(400, 'Ungültiger Kontroll-Eintrag im Backup');
-        }
-        const rec = insp as Record<string, unknown>;
-        if (!memberIdSet.has(Number(rec.member_id)) || !String(rec.inspected_at ?? '').trim()) {
-          throw new HttpError(400, 'Kontroll-Eintrag verweist auf ungültigen Kameraden oder fehlendes Datum');
-        }
-        if (rec.result !== 'ok' && rec.result !== 'issue') {
-          throw new HttpError(400, 'Kontroll-Eintrag hat ungültiges result (ok oder issue erwartet)');
-        }
-      }
-
-      for (const v of vehicles) {
-        if (!v || typeof v !== 'object') {
-          throw new HttpError(400, 'Ungültiger Fahrzeug-Eintrag im Backup');
-        }
-        const rec = v as Record<string, unknown>;
-        if (!String(rec.name ?? '').trim()) {
-          throw new HttpError(400, 'Fahrzeug-Eintrag benötigt einen Namen');
-        }
-      }
+      const validated = validateBackupRows({
+        members,
+        memberLicenses,
+        inspections,
+        vehicles,
+        vehicleBriefings,
+      });
 
       const restored = restoreBackupDataAtomically(deps, {
-        members: members as Array<Record<string, unknown>>,
-        memberLicenses: memberLicenses as Array<Record<string, unknown>>,
-        inspections: inspections as Array<Record<string, unknown>>,
-        vehicles: vehicles as Array<Record<string, unknown>>,
+        ...validated,
         settingsObj:
           body.settings && typeof body.settings === 'object'
             ? (body.settings as Record<string, unknown>)
@@ -466,6 +643,7 @@ export function createBackupRouter(deps: {
       try {
         fs.writeFileSync(tmpPath, body);
 
+        let tableSet: Set<string>;
         try {
           tmpDb = new DatabaseSync(tmpPath, { readOnly: true });
           const integrity = tmpDb.prepare('PRAGMA integrity_check').get() as
@@ -478,7 +656,7 @@ export function createBackupRouter(deps: {
           const tableRows = tmpDb
             .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
             .all() as Array<{ name: string }>;
-          const tableSet = new Set(tableRows.map((r) => r.name));
+          tableSet = new Set(tableRows.map((r) => r.name));
           for (const requiredTable of REQUIRED_SQLITE_TABLES) {
             if (!tableSet.has(requiredTable)) {
               throw new HttpError(
@@ -494,16 +672,19 @@ export function createBackupRouter(deps: {
 
         const members = tmpDb
           .prepare('SELECT * FROM members ORDER BY id ASC')
-          .all() as unknown as Array<Record<string, unknown>>;
+          .all() as unknown[];
         const memberLicenses = tmpDb
           .prepare('SELECT * FROM member_licenses ORDER BY id ASC')
-          .all() as unknown as Array<Record<string, unknown>>;
+          .all() as unknown[];
         const inspections = tmpDb
           .prepare('SELECT * FROM inspections ORDER BY id ASC')
-          .all() as unknown as Array<Record<string, unknown>>;
+          .all() as unknown[];
         const vehicles = tmpDb
           .prepare('SELECT * FROM vehicles ORDER BY id ASC')
-          .all() as unknown as Array<Record<string, unknown>>;
+          .all() as unknown[];
+        const vehicleBriefings = tableSet.has('vehicle_briefings')
+          ? (tmpDb.prepare('SELECT * FROM vehicle_briefings ORDER BY id ASC').all() as unknown[])
+          : [];
 
         const settingsRows = tmpDb
           .prepare('SELECT key, value_json FROM settings')
@@ -520,11 +701,16 @@ export function createBackupRouter(deps: {
           }
         }
 
-        const restored = restoreBackupDataAtomically(deps, {
+        const validated = validateBackupRows({
           members,
           memberLicenses,
           inspections,
           vehicles,
+          vehicleBriefings,
+        });
+
+        const restored = restoreBackupDataAtomically(deps, {
+          ...validated,
           settingsObj,
         });
 
