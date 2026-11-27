@@ -28,6 +28,7 @@ function makeMember(overrides: Partial<Member> = {}): Member {
     first_name: 'Max',
     last_name: 'Mustermann',
     personnel_number: '101',
+    birth_date: null,
     unit: 'Löschzug 1',
     email: 'max@example.org',
     phone: null,
@@ -58,6 +59,12 @@ function makeInspection(inspectedAt: string, result: 'ok' | 'issue' = 'ok'): Ins
     inspector_name: 'Kommandant',
     result,
     notes: null,
+    cancelled_at: null,
+    cancelled_by_name: null,
+    cancel_reason: null,
+    checked_eu_card: true,
+    checked_fw_license: false,
+    checked_restrictions: false,
     created_at: '2026-01-01T00:00:00Z',
   };
 }
@@ -141,11 +148,20 @@ test('evaluateMember handles active ban date range and card expiration', () => {
     card_expires_at: '2026-05-01',
     licenses: [{ license_class: 'B', issued_at: '2010-01-01', expires_at: null, key_numbers: [], notes: null }],
   });
-  const evCard = evaluateMember(expiredCardMember, makeInspection('2026-05-15'), baseSettings, '2026-06-01');
-  assert.equal(evCard.overallStatus, 'red');
+  const evCardDefault = evaluateMember(expiredCardMember, makeInspection('2026-05-15'), baseSettings, '2026-06-01');
+  assert.equal(evCardDefault.cardStatus, 'red');
+  assert.equal(evCardDefault.overallStatus, 'yellow');
+
+  const evCardBlocking = evaluateMember(
+    expiredCardMember,
+    makeInspection('2026-05-15'),
+    { ...baseSettings, state_rules: { expired_card_blocks_driving: true } },
+    '2026-06-01',
+  );
+  assert.equal(evCardBlocking.overallStatus, 'red');
 });
 
-test('evaluateVehicleDrivers applies 3-tier status including key 78 and OR-required classes', () => {
+test('evaluateVehicleDrivers applies 3-tier status including key 78 (red on manual) and OR-required classes', () => {
   const vehicle: Vehicle = {
     id: 1,
     name: 'TSF-W',
@@ -154,6 +170,8 @@ test('evaluateVehicleDrivers applies 3-tier status including key 78 and OR-requi
     unit: 'Löschzug 1',
     required_classes: ['C1', 'FW_750'],
     is_automatic: false,
+    requires_trailer: false,
+    requires_briefing: false,
     notes: null,
     active: true,
     created_at: '2026-01-01',
@@ -170,7 +188,7 @@ test('evaluateVehicleDrivers applies 3-tier status including key 78 and OR-requi
       { license_class: 'FW_750', issued_at: '2023-01-01', expires_at: null, key_numbers: [], notes: null },
     ],
   });
-  const mYellow78 = makeMember({
+  const mKey78 = makeMember({
     id: 2,
     first_name: 'Bernd',
     last_name: 'Beta',
@@ -193,7 +211,7 @@ test('evaluateVehicleDrivers applies 3-tier status including key 78 and OR-requi
     licenses: [{ license_class: 'B', issued_at: '2015-01-01', expires_at: null, key_numbers: [], notes: null }],
   });
 
-  const evaluated = [mGreen, mYellow78, mRedExpired, mExcluded].map((m) => ({
+  const evaluated = [mGreen, mKey78, mRedExpired, mExcluded].map((m) => ({
     member: m,
     evaluation: evaluateMember(m, makeInspection('2026-05-01'), baseSettings, today),
   }));
@@ -202,11 +220,16 @@ test('evaluateVehicleDrivers applies 3-tier status including key 78 and OR-requi
   assert.equal(drivers.length, 3);
   assert.equal(drivers[0].firstName, 'Anna');
   assert.equal(drivers[0].status, 'green');
-  assert.equal(drivers[1].firstName, 'Bernd');
-  assert.equal(drivers[1].status, 'yellow');
-  assert.ok(drivers[1].reasons.some((r) => r.includes('78')));
-  assert.equal(drivers[2].firstName, 'Clara');
-  assert.equal(drivers[2].status, 'red');
+  const bernd = drivers.find((d) => d.firstName === 'Bernd')!;
+  assert.equal(bernd.status, 'red');
+  assert.ok(bernd.reasons.some((r) => r.includes('78')));
+  const clara = drivers.find((d) => d.firstName === 'Clara')!;
+  assert.equal(clara.status, 'red');
+
+  const autoVehicle: Vehicle = { ...vehicle, is_automatic: true };
+  const autoDrivers = evaluateVehicleDrivers(autoVehicle, evaluated);
+  const berndAuto = autoDrivers.find((d) => d.firstName === 'Bernd')!;
+  assert.equal(berndAuto.status, 'green');
 });
 
 test('INCLUDED_BY_CLASS and EXPIRING_CLASSES cover expected class hierarchies', () => {
@@ -330,6 +353,8 @@ test('evaluateVehicleDrivers blocks missing/overdue inspections as red when stri
     unit: null,
     required_classes: ['B'],
     is_automatic: true,
+    requires_trailer: false,
+    requires_briefing: false,
     notes: null,
     active: true,
     created_at: '2026-01-01',
@@ -357,4 +382,148 @@ test('evaluateVehicleDrivers blocks missing/overdue inspections as red when stri
 
   const strictOverdueDrivers = evaluateVehicleDrivers(vehicle, [{ member: m, evaluation: overdueEval }], strictSettings);
   assert.equal(strictOverdueDrivers[0].status, 'red');
+});
+
+test('CE with key number 79 covers C1/C1E/FW_750 but NOT C or unrestricted CE', () => {
+  const ce79Covered = computeCoveredClasses(
+    [{ license_class: 'CE', issued_at: '1995-01-01', expires_at: null, key_numbers: ['79'], notes: null }],
+    '2026-06-01',
+    true,
+  );
+  assert.ok(ce79Covered.includes('C1'));
+  assert.ok(ce79Covered.includes('C1E'));
+  assert.ok(ce79Covered.includes('FW_750'));
+  assert.ok(!ce79Covered.includes('C'));
+  assert.ok(!ce79Covered.includes('CE'));
+
+  const heavyVehicle: Vehicle = {
+    id: 99,
+    name: 'HLF 20',
+    call_sign: null,
+    license_plate: null,
+    unit: null,
+    required_classes: ['C'],
+    is_automatic: true,
+    requires_trailer: false,
+    requires_briefing: false,
+    notes: null,
+    active: true,
+    created_at: '2026-01-01',
+    updated_at: '2026-01-01',
+  };
+  const ce79Member = makeMember({
+    id: 20,
+    licenses: [{ license_class: 'CE', issued_at: '1995-01-01', expires_at: null, key_numbers: ['79'], notes: null }],
+  });
+  const ev = evaluateMember(ce79Member, makeInspection('2026-05-01'), baseSettings, '2026-06-01');
+  assert.equal(evaluateVehicleDrivers(heavyVehicle, [{ member: ce79Member, evaluation: ev }]).length, 0);
+
+  const c1Vehicle: Vehicle = { ...heavyVehicle, required_classes: ['C1E'] };
+  const c1Drivers = evaluateVehicleDrivers(c1Vehicle, [{ member: ce79Member, evaluation: ev }]);
+  assert.equal(c1Drivers.length, 1);
+  assert.equal(c1Drivers[0].status, 'green');
+});
+
+test('birth_date triggers 50-year warning and staggered exchange deadline hints', () => {
+  const m50 = makeMember({
+    birth_date: '1976-10-01',
+    licenses: [
+      { license_class: 'B', issued_at: '1995-01-01', expires_at: null, key_numbers: [], notes: null },
+      { license_class: 'CE', issued_at: '1995-01-01', expires_at: null, key_numbers: ['79'], notes: null },
+    ],
+  });
+  const ev50 = evaluateMember(m50, makeInspection('2026-05-01'), baseSettings, '2026-06-01');
+  assert.equal(ev50.overallStatus, 'yellow');
+  assert.ok(ev50.reasons.some((r) => r.includes('50. Lebensjahr')));
+
+  const mOldCard = makeMember({
+    birth_date: '1968-05-01',
+    card_issued_at: '1990-01-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '1990-01-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evOldCard = evaluateMember(mOldCard, makeInspection('2026-05-01'), baseSettings, '2026-06-01');
+  assert.equal(evOldCard.overallStatus, 'yellow');
+  assert.ok(evOldCard.reasons.some((r) => r.includes('Umtauschfrist')));
+});
+
+test('fw_allow_trailers=false blocks FW drivers on trailer vehicles, and requires_briefing warns when unbriefed', () => {
+  const trailerVehicle: Vehicle = {
+    id: 50,
+    name: 'GW-L2 mit Anhänger',
+    call_sign: null,
+    license_plate: null,
+    unit: null,
+    required_classes: ['C1', 'FW_750'],
+    is_automatic: true,
+    requires_trailer: true,
+    requires_briefing: true,
+    notes: null,
+    active: true,
+    created_at: '2026-01-01',
+    updated_at: '2026-01-01',
+  };
+  const fwMember = makeMember({
+    id: 30,
+    licenses: [
+      { license_class: 'B', issued_at: '2015-01-01', expires_at: null, key_numbers: [], notes: null },
+      { license_class: 'FW_750', issued_at: '2020-01-01', expires_at: null, key_numbers: [], notes: null },
+    ],
+  });
+  const ev = evaluateMember(fwMember, makeInspection('2026-05-01'), baseSettings, '2026-06-01');
+
+  const unbriefed = evaluateVehicleDrivers(trailerVehicle, [{ member: fwMember, evaluation: ev }], baseSettings, new Set());
+  assert.equal(unbriefed[0].status, 'yellow');
+  assert.equal(unbriefed[0].isBriefed, false);
+  assert.ok(unbriefed[0].reasons.some((r) => r.includes('Einweisung fehlt')));
+
+  const briefed = evaluateVehicleDrivers(trailerVehicle, [{ member: fwMember, evaluation: ev }], baseSettings, new Set([30]));
+  assert.equal(briefed[0].status, 'green');
+  assert.equal(briefed[0].isBriefed, true);
+
+  const noTrailerSettings: RuleSettings = {
+    ...baseSettings,
+    state_rules: { fw_allow_trailers: false },
+  };
+  const blockedTrailer = evaluateVehicleDrivers(trailerVehicle, [{ member: fwMember, evaluation: ev }], noTrailerSettings, new Set([30]));
+  assert.equal(blockedTrailer[0].status, 'red');
+  assert.ok(blockedTrailer[0].reasons.some((r) => r.includes('Anhängerbetrieb')));
+});
+
+test('Anlage 8e FeV distinguishes paper licenses (<=1998) by birth year and card licenses (1999-2013) by issue year', () => {
+  const insp = makeInspection('2026-05-01');
+  const today = '2026-06-01';
+
+  // Paper license (1998) for birth year 1985 -> deadline 19.01.2025 -> expired -> yellow
+  const paper1985 = makeMember({
+    birth_date: '1985-03-15',
+    card_issued_at: '1998-06-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '1998-06-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evPaper = evaluateMember(paper1985, insp, baseSettings, today);
+  assert.equal(evPaper.overallStatus, 'yellow');
+  assert.ok(evPaper.reasons.some((r) => r.includes('19.01.2025') && r.includes('abgelaufen')));
+
+  // Card license (2010) for birth year 1985 -> deadline 19.01.2031 -> NOT expired in 2026 -> green
+  const card2010 = makeMember({
+    birth_date: '1985-03-15',
+    card_issued_at: '2010-06-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '2010-06-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evCard2010 = evaluateMember(card2010, insp, baseSettings, today);
+  assert.equal(evCard2010.overallStatus, 'green');
+  assert.ok(evCard2010.reasons.some((r) => r.includes('19.01.2031')));
+
+  // Card license (2000) for birth year < 1953 -> deadline 19.01.2033
+  const cardPre1953 = makeMember({
+    birth_date: '1950-01-10',
+    card_issued_at: '2000-05-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '2000-05-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evPre1953 = evaluateMember(cardPre1953, insp, baseSettings, today);
+  assert.equal(evPre1953.overallStatus, 'green');
+  assert.ok(evPre1953.reasons.some((r) => r.includes('19.01.2033')));
 });

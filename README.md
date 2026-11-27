@@ -7,11 +7,11 @@ Webanwendung zur Verwaltung von Fahrerlaubnissen, Feuerwehrführerscheinen, rege
 - **EU-Führerscheinklassen & Einschlussregeln**: Unterstützung aller EU-Klassen (`AM`, `A1`, `A2`, `A`, `B`, `BE`, `C1`, `C1E`, `C`, `CE`, `D1`, `D1E`, `D`, `DE`, `L`, `T`) inklusive automatischer Einschlusslogik und individueller Erteilungs-/Ablaufdaten.
 - **Feuerwehrführerschein**: Verwaltung von `FW_475` (bis 4,75 t) und `FW_750` (bis 7,5 t) einschließlich automatischer Abdeckung durch vorhandene Klassen (`C1`, `C1E`, `C`, `CE`).
 - **Schlüsselzahlen & Sperren**: Erfassung globaler und klassenspezifischer Schlüsselzahlen (z. B. `01`, `78`, `95`, `96`, `171`, `172`, `196`, `197`) sowie befristeter oder unbefristeter Fahrverbote/Sperren.
-- **Führerscheinkontrollen**: Dokumentierte Sichtprüfungen mit frei konfigurierbarem Kontrollintervall (Standard: 6 Monate), Vorwarnfristen, Prüfprotokoll und Erkennung überfälliger Kontrollen.
-- **Fahrzeug-3-Stufen-Ampel**: Pro Fahrzeug (konfigurierbare ODER-Klassenanforderungen und Getriebeart Automatik/Schaltgetriebe) werden berechtigte aktive Kameraden automatisch bewertet:
-  - **Grün**: Gültige Klasse, aktuelle Kontrolle, keine Einschränkung.
-  - **Gelb**: Warnung (z. B. bald ablaufende Klasse/Karte, Kontrolle fällig/überfällig, fehlende Erstkontrolle oder Schlüsselzahl `78` auf Schaltfahrzeug).
-  - **Rot**: Nicht fahrberechtigt (abgelaufene Klasse oder Karte, aktives Fahrverbot oder Beanstandung bei der letzten Kontrolle).
+- **Führerscheinkontrollen & Revisionssicherheit**: Dokumentierte Sichtprüfungen (Original-EU-Führerschein, FW-Fahrberechtigung, Auflagen/Schlüsselzahlen) mit frei konfigurierbarem Kontrollintervall (Standard: 6 Monate), Vorwarnfristen, Prüfprotokoll und Erkennung überfälliger Kontrollen. Erfasste Kontrollen lassen sich aus Revisionsgründen nicht löschen, sondern nur durch Administratoren mit Pflichtbegründung stornieren; Änderungen werden im Audit-Log festgehalten.
+- **Fahrzeug-3-Stufen-Ampel & Einweisungen**: Pro Fahrzeug (konfigurierbare ODER-Klassenanforderungen, Automatik/Schaltgetriebe, optionaler Anhängerbetrieb sowie optionale Einweisungspflicht) werden berechtigte aktive Kameraden automatisch bewertet:
+  - **Grün**: Gültige Klasse, aktuelle Kontrolle, ggf. erforderliche Einweisung vorhanden, keine Einschränkung.
+  - **Gelb**: Warnung (z. B. bald ablaufende Klasse/Karte, Kontrolle fällig/überfällig, fehlende Erstkontrolle oder fehlende Fahrzeug-Einweisung).
+  - **Rot**: Nicht fahrberechtigt (abgelaufene Klasse, aktives Fahrverbot, Beanstandung bei der letzten Kontrolle oder Schlüsselzahl `78` auf Schaltfahrzeug).
 - **Kalender-Abo (iCal / `.ics`)**: Geschützter Kalender-Feed für fällige Kontrollen sowie ablaufende Klassen und Führerscheinkarten inkl. Erinnerungen (`VALARM`) und Token-Rotation.
 - **E-Mail-Benachrichtigungen (SMTP & JMAP)**: Automatische Sammelberichte (Digest) für Verantwortliche sowie individuelle Vorab-Erinnerungen an Kameraden – wahlweise per SMTP oder JMAP (RFC 8620/8621).
 - **PDF- & CSV-Export/Import**: Druckfertige PDF-Berichte (Prüfprotokoll mit Unterschriftsfeld, Fahrzeug-Fahrerlisten, Kameradenübersicht), CSV-Export und CSV-Import mit Vorschau.
@@ -67,6 +67,9 @@ Anschließend ist die Anwendung unter `http://<host>:3000` erreichbar.
 | `DATA_DIR` | `/app/data` (lokal: `./data`) | Speicherort für die SQLite-Datenbank (`fw-fuehrerschein.db`) und interne Schlüsseldaten |
 | `TZ` | `Europe/Berlin` | Zeitzone für Datumsberechnungen, Scheduler und Logs |
 | `APP_SECRET` | *(optional)* | Schlüssel für die AES-256-GCM-Verschlüsselung gespeicherter Mail-Zugangsdaten |
+| `COOKIE_SECURE` | *(automatisch bei HTTPS)* | Setzt das `Secure`-Flag auf das Session-Cookie (`fw_session`), wenn `true` (z. B. hinter einem TLS-Reverse-Proxy) |
+| `ALLOW_INSECURE_JMAP_URLS` | `false` | Erlaubt `http://`-URLs für JMAP-Endpunkte (nur für lokale Tests/Entwicklung; standardmäßig ist `https://` Pflicht) |
+| `ALLOW_PRIVATE_JMAP_URLS` | `false` | Erlaubt JMAP-Anfragen an private, Loopback- oder Link-Local-IP-Adressen (standardmäßig zum SSRF-Schutz blockiert) |
 
 > **Hinweis zu `DATA_DIR` und `APP_SECRET`:**
 > In `docker-compose.yml` wird `./data` auf `/app/data` gemountet, damit Datenbank und Konfiguration über Container-Neustarts hinweg erhalten bleiben.
@@ -116,9 +119,17 @@ Diese URL benötigt kein Browser-Login und kann direkt in Kalender-Clients (z. B
 
 ---
 
+## Revisionssicherheit, Audit-Log & Fahrzeug-Einweisungen
+
+- **Stornierung statt Löschung**: Erfasste Führerscheinkontrollen lassen sich aus Nachvollziehbarkeits- und Revisionsgründen nicht über `DELETE /api/inspections/:id` löschen (Antwort `405 Method Not Allowed`). Fehleingaben werden durch Administratoren mit verpflichtender Angabe eines Stornogrundes über `POST /api/inspections/:id/cancel` storniert und im Protokoll entsprechend markiert.
+- **Audit-Log**: Kontrollvorgänge, Stornierungen sowie Änderungen an Fahrzeug-Einweisungen werden mit Zeitstempel, ausführendem Benutzer und Details in der Tabelle `audit_logs` protokolliert und stehen Administratoren im Prüfprotokoll (bzw. über `GET /api/inspections/audit`) zur Einsicht bereit.
+- **Fahrzeug-Einweisungen**: Fahrzeuge können optional als einweisungspflichtig markiert werden. In der Kameraden-Detailansicht pflegen Administratoren und Prüfer die eingewiesenen Fahrzeuge pro Kamerad (`PUT /api/members/:id/briefings`); fehlt bei einem einweisungspflichtigen Fahrzeug die Einweisung, wird der Fahrer in der Fahrzeugliste mit einer gelben Warnung (`Einweisung fehlt`) geführt.
+
+---
+
 ## Backup & Restore
 
 Unter **Einstellungen → Import/Export & Backup** stehen zwei Sicherungswege zur Verfügung:
 
-1. **SQLite-Backup (`/api/admin/backup/sqlite`)**: Erzeugt über `VACUUM INTO` eine konsistente Kopie der gesamten Datenbank (`fw-fuehrerschein.db`) inklusive Benutzerkonten, Einstellungen und Benachrichtigungsprotokoll.
-2. **JSON-Backup & -Restore (`/api/admin/backup/json` & `/api/admin/restore/json`)**: Exportiert Kameraden, Führerscheine, Kontrollen, Fahrzeuge und nicht-sensitive Einstellungen als JSON-Datei und ermöglicht die vollständige Wiederherstellung dieser Fachdaten in einer Transaktion.
+1. **SQLite-Backup & -Restore (`/api/admin/backup/sqlite` & `/api/admin/restore/sqlite`)**: Erzeugt über `VACUUM INTO` eine konsistente Kopie der gesamten Datenbank (`fw-fuehrerschein.db`) inklusive Benutzerkonten, Einstellungen und Benachrichtigungsprotokoll; beim SQLite-Restore werden Fachdaten und nicht-sensitive Einstellungen atomar wiederhergestellt, während lokale Benutzerkonten und aktive Sessions erhalten bleiben.
+2. **JSON-Backup & -Restore (`/api/admin/backup/json` & `/api/admin/restore/json`)**: Exportiert Kameraden, Führerscheine, Kontrollen, Fahrzeuge, Fahrzeug-Einweisungen und nicht-sensitive Einstellungen als JSON-Datei und ermöglicht die vollständige Wiederherstellung dieser Fachdaten in einer Transaktion.

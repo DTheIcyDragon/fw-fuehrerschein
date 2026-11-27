@@ -18,10 +18,12 @@ export function startScheduler(deps: {
     if (running) return;
     running = true;
     try {
+      const now = new Date();
+      deps.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now.toISOString());
+
       const pub = deps.settings.getPublicSettings();
       if (pub.mail_provider === 'none') return;
 
-      const now = new Date();
       const today = getTodayIsoDate(now);
       let shouldSendDigest = false;
 
@@ -48,7 +50,7 @@ export function startScheduler(deps: {
         sendMembers: shouldSendMembers,
       });
 
-      if (shouldSendDigest && res.errors.length === 0) {
+      if (shouldSendDigest && res.digestErrors.length === 0) {
         deps.settings.setSettingRaw('last_digest_sent_at', today);
       }
     } catch (err) {

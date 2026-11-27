@@ -162,7 +162,7 @@ export function generateIcalFeed(evaluatedMembers: EvaluatedMember[], department
             uid: `fw-card-${member.id}-${member.card_expires_at}@fw-fuehrerschein`,
             dateIso: member.card_expires_at,
             summary: `Führerscheinkarte läuft ab: ${fullName}`,
-            description: `${fullName} (${unitPart})\nFührerschein-Nr.: ${member.license_number || '-'}\nAblaufdatum Karte: ${formatDateDe(member.card_expires_at)}`,
+            description: `${fullName} (${unitPart})\nAblaufdatum Karte: ${formatDateDe(member.card_expires_at)}`,
             alarmTrigger: '-P30D',
             alarmDescription: `Führerscheinkarte für ${fullName} läuft in 30 Tagen ab`,
           },

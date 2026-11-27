@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -6,11 +6,17 @@ import {
   ClipboardCheck,
   CreditCard,
   Edit3,
+  Save,
   Shield,
   Trash2,
   Truck,
 } from 'lucide-react';
-import type { EvaluatedMember, EvaluatedVehicle, Inspection, MemberStatus } from '@shared/types';
+import type {
+  EvaluatedMember,
+  Inspection,
+  MemberStatus,
+  MemberVehicleSummary,
+} from '@shared/types';
 import {
   formatDateDe,
   KEY_NUMBER_CATALOG,
@@ -21,6 +27,7 @@ import { api, ApiError } from '../api';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { InspectionModal } from '../components/InspectionModal';
 import { MemberModal } from '../components/MemberModal';
+import { ModalShell } from '../components/ModalShell';
 import { TrafficLightBadge } from '../components/TrafficLightBadge';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -40,14 +47,17 @@ export function MemberDetailPage() {
 
   const [member, setMember] = useState<EvaluatedMember | null>(null);
   const [inspections, setInspections] = useState<Inspection[]>([]);
-  const [vehicles, setVehicles] = useState<EvaluatedVehicle[]>([]);
+  const [eligibleVehicles, setEligibleVehicles] = useState<MemberVehicleSummary[]>([]);
+  const [briefedIds, setBriefedIds] = useState<number[]>([]);
+  const [savingBriefings, setSavingBriefings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [deleteMemberConfirm, setDeleteMemberConfirm] = useState(false);
-  const [deleteInspectionId, setDeleteInspectionId] = useState<number | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Inspection | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [deleting, setDeleting] = useState(false);
 
   const loadDetail = useCallback(async () => {
@@ -62,11 +72,12 @@ export function MemberDetailPage() {
       const [m, insp, veh] = await Promise.all([
         api.getMember(memberId),
         api.listInspections({ memberId }),
-        api.listVehicles(),
+        api.getMemberVehicles(memberId),
       ]);
       setMember(m);
       setInspections(insp);
-      setVehicles(veh);
+      setEligibleVehicles(veh);
+      setBriefedIds(m.briefed_vehicle_ids ?? []);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Daten konnten nicht geladen werden.');
     } finally {
@@ -91,18 +102,43 @@ export function MemberDetailPage() {
     }
   };
 
-  const handleDeleteInspection = async () => {
-    if (!deleteInspectionId) return;
+  const handleCancelInspection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancelTarget || !cancelReason.trim()) return;
     setDeleting(true);
     try {
-      await api.deleteInspection(deleteInspectionId);
-      showToast('Kontrolleintrag gelöscht.', 'success');
-      setDeleteInspectionId(null);
+      await api.cancelInspection(cancelTarget.id, cancelReason.trim());
+      showToast('Kontrolleintrag storniert.', 'success');
+      setCancelTarget(null);
+      setCancelReason('');
       await loadDetail();
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Löschen fehlgeschlagen.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'Stornierung fehlgeschlagen.', 'error');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const toggleBriefing = (vehicleId: number) => {
+    setBriefedIds((prev) =>
+      prev.includes(vehicleId) ? prev.filter((id) => id !== vehicleId) : [...prev, vehicleId],
+    );
+  };
+
+  const handleSaveBriefings = async () => {
+    if (!member) return;
+    setSavingBriefings(true);
+    try {
+      await api.updateMemberBriefings(member.id, briefedIds);
+      showToast('Fahrzeug-Einweisungen gespeichert.', 'success');
+      await loadDetail();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : 'Einweisungen konnten nicht gespeichert werden.',
+        'error',
+      );
+    } finally {
+      setSavingBriefings(false);
     }
   };
 
@@ -121,12 +157,9 @@ export function MemberDetailPage() {
     );
   }
 
-  const eligibleVehicles = vehicles
-    .map((v) => ({
-      vehicle: v,
-      entry: v.drivers.find((d) => d.memberId === member.id) ?? null,
-    }))
-    .filter((item) => item.entry !== null);
+  const briefingsChanged =
+    JSON.stringify([...briefedIds].sort((a, b) => a - b)) !==
+    JSON.stringify([...(member.briefed_vehicle_ids ?? [])].sort((a, b) => a - b));
 
   return (
     <div className="space-y-6">
@@ -149,7 +182,10 @@ export function MemberDetailPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {[member.unit, member.personnel_number ? `Personalnummer: ${member.personnel_number}` : null]
+            {[
+              member.unit,
+              member.personnel_number ? `Personalnummer: ${member.personnel_number}` : null,
+            ]
               .filter(Boolean)
               .join(' · ') || 'Keine Einheit hinterlegt'}
           </p>
@@ -188,7 +224,8 @@ export function MemberDetailPage() {
           <div>
             <h2 className="font-bold">Aktives Fahrverbot / Fahrsperre</h2>
             <p className="mt-0.5 text-sm">
-              {member.ban_reason || 'Fahrverbot aktiv — Kamerad darf aktuell keine Einsatzfahrzeuge führen.'}
+              {member.ban_reason ||
+                'Fahrverbot aktiv — Kamerad darf aktuell keine Einsatzfahrzeuge führen.'}
             </p>
             {(member.ban_from || member.ban_until) && (
               <p className="mt-1 text-xs opacity-80">
@@ -227,6 +264,10 @@ export function MemberDetailPage() {
 
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
+              <dt className="text-xs text-slate-500 dark:text-slate-400">Geburtsdatum</dt>
+              <dd className="font-medium">{formatDateDe(member.birth_date)}</dd>
+            </div>
+            <div>
               <dt className="text-xs text-slate-500 dark:text-slate-400">E-Mail</dt>
               <dd className="font-medium">{member.email || '–'}</dd>
             </div>
@@ -243,11 +284,15 @@ export function MemberDetailPage() {
               <dd className="font-medium">{member.issuing_authority || '–'}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500 dark:text-slate-400">Ausstellungsdatum (4a)</dt>
+              <dt className="text-xs text-slate-500 dark:text-slate-400">
+                Ausstellungsdatum (4a)
+              </dt>
               <dd className="font-medium">{formatDateDe(member.card_issued_at)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500 dark:text-slate-400">Karten-Ablaufdatum (4b)</dt>
+              <dt className="text-xs text-slate-500 dark:text-slate-400">
+                Karten-Ablaufdatum (4b)
+              </dt>
               <dd className="flex items-center gap-2 font-medium">
                 <span>{formatDateDe(member.card_expires_at)}</span>
                 {member.card_expires_at && (
@@ -287,11 +332,24 @@ export function MemberDetailPage() {
           )}
         </section>
 
-        {/* Berechtigte Fahrzeuge */}
+        {/* Berechtigte Fahrzeuge & Einweisungen */}
         <section className="card p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Truck className="h-5 w-5 text-fire-600" />
-            <h2 className="text-base font-semibold">Berechtigte Fahrzeuge</h2>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Truck className="h-5 w-5 text-fire-600" />
+              <h2 className="text-base font-semibold">Berechtigte Fahrzeuge & Einweisungen</h2>
+            </div>
+            {canEditMembers && briefingsChanged && (
+              <button
+                type="button"
+                className="btn-primary !min-h-[36px] !px-3 text-xs"
+                onClick={() => void handleSaveBriefings()}
+                disabled={savingBriefings}
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>{savingBriefings ? 'Speichert…' : 'Einweisungen speichern'}</span>
+              </button>
+            )}
           </div>
 
           {eligibleVehicles.length === 0 ? (
@@ -302,21 +360,21 @@ export function MemberDetailPage() {
             </p>
           ) : (
             <div className="space-y-2.5">
-              {eligibleVehicles.map(({ vehicle, entry }) => {
-                if (!entry) return null;
+              {eligibleVehicles.map((entry) => {
+                const checked = briefedIds.includes(entry.vehicleId);
                 return (
                   <div
-                    key={vehicle.id}
+                    key={entry.vehicleId}
                     className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="font-semibold text-slate-900 dark:text-white">
-                          {vehicle.name}
+                          {entry.name}
                         </p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {vehicle.call_sign || vehicle.license_plate || 'Ohne Funkrufname'} ·{' '}
-                          {vehicle.is_automatic ? 'Automatik' : 'Schaltgetriebe'}
+                          {entry.call_sign || entry.license_plate || 'Ohne Funkrufname'} ·{' '}
+                          {entry.is_automatic ? 'Automatik' : 'Schaltgetriebe'}
                         </p>
                       </div>
                       <TrafficLightBadge status={entry.status} compact />
@@ -324,6 +382,20 @@ export function MemberDetailPage() {
                     <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
                       {entry.reasons.join(' · ')}
                     </p>
+                    {canEditMembers && (
+                      <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-fire-600 focus:ring-fire-500"
+                          checked={checked}
+                          onChange={() => toggleBriefing(entry.vehicleId)}
+                        />
+                        <span>
+                          Auf Fahrzeug eingewiesen{' '}
+                          {entry.requires_briefing ? '(erforderlich)' : '(optional)'}
+                        </span>
+                      </label>
+                    )}
                   </div>
                 );
               })}
@@ -415,39 +487,59 @@ export function MemberDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold">Datum</th>
                   <th className="px-4 py-3 text-left font-semibold">Ergebnis</th>
                   <th className="px-4 py-3 text-left font-semibold">Prüfer</th>
-                  <th className="px-4 py-3 text-left font-semibold">Bemerkung</th>
+                  <th className="px-4 py-3 text-left font-semibold">Bemerkung / Status</th>
                   {isAdmin && <th className="px-4 py-3 text-right font-semibold">Aktion</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {inspections.map((insp) => (
-                  <tr key={insp.id}>
-                    <td className="px-4 py-3 font-medium">{formatDateDe(insp.inspected_at)}</td>
-                    <td className="px-4 py-3">
-                      {insp.result === 'ok' ? (
-                        <TrafficLightBadge status="green" label="Ohne Beanstandung" compact />
-                      ) : (
-                        <TrafficLightBadge status="red" label="Beanstandung" compact />
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{insp.inspector_name}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {insp.notes || '–'}
-                    </td>
-                    {isAdmin && (
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setDeleteInspectionId(insp.id)}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/60"
-                          aria-label="Kontrolleintrag löschen"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                {inspections.map((insp) => {
+                  const isCancelled = Boolean(insp.cancelled_at);
+                  return (
+                    <tr key={insp.id} className={isCancelled ? 'opacity-65' : ''}>
+                      <td className={`px-4 py-3 font-medium ${isCancelled ? 'line-through' : ''}`}>
+                        {formatDateDe(insp.inspected_at)}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-4 py-3">
+                        {isCancelled ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            <Ban className="h-3 w-3" />
+                            Storniert
+                          </span>
+                        ) : insp.result === 'ok' ? (
+                          <TrafficLightBadge status="green" label="Ohne Beanstandung" compact />
+                        ) : (
+                          <TrafficLightBadge status="red" label="Beanstandung" compact />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">{insp.inspector_name}</td>
+                      <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                        <div>{insp.notes || '–'}</div>
+                        {isCancelled && (
+                          <div className="mt-1 text-red-600 dark:text-red-400">
+                            Storniert von {insp.cancelled_by_name ?? 'Admin'}:{' '}
+                            {insp.cancel_reason || 'Ohne Grund'}
+                          </div>
+                        )}
+                      </td>
+                      {isAdmin && (
+                        <td className="px-4 py-3 text-right">
+                          {!isCancelled && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCancelTarget(insp);
+                                setCancelReason('');
+                              }}
+                              className="btn-secondary !min-h-[36px] !px-2.5 text-xs text-red-600 hover:bg-red-50 dark:text-red-400"
+                            >
+                              Stornieren
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -479,15 +571,54 @@ export function MemberDetailPage() {
         onCancel={() => setDeleteMemberConfirm(false)}
       />
 
-      <ConfirmDialog
-        open={deleteInspectionId !== null}
-        title="Kontrolleintrag löschen?"
-        message="Möchten Sie diesen dokumentierten Kontrolleintrag wirklich entfernen?"
-        confirmLabel="Eintrag löschen"
-        loading={deleting}
-        onConfirm={() => void handleDeleteInspection()}
-        onCancel={() => setDeleteInspectionId(null)}
-      />
+      <ModalShell
+        open={cancelTarget !== null}
+        onClose={() => setCancelTarget(null)}
+        title="Kontrolleintrag stornieren"
+        maxWidthClass="max-w-md"
+        icon={<Ban className="h-5 w-5 text-red-600" />}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setCancelTarget(null)}
+              disabled={deleting}
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              form="detail-cancel-inspection-form"
+              className="btn-danger"
+              disabled={deleting || !cancelReason.trim()}
+            >
+              {deleting ? 'Storniert…' : 'Verbindlich stornieren'}
+            </button>
+          </>
+        }
+      >
+        <form
+          id="detail-cancel-inspection-form"
+          onSubmit={handleCancelInspection}
+          className="space-y-4"
+        >
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Aus Revisionsgründen werden Kontrollen nicht gelöscht, sondern mit Begründung storniert.
+          </p>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Storno-Grund *</label>
+            <textarea
+              rows={3}
+              className="input-field min-h-[84px]"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="z. B. Versehentlich für falschen Kameraden eingetragen"
+              required
+            />
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 }

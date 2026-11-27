@@ -26,7 +26,10 @@ const CSV_HEADERS = [
 ] as const;
 
 function quoteCsvCell(value: string | null | undefined): string {
-  const str = value ?? '';
+  let str = value ?? '';
+  if (/^[=+\-@\t\r]/.test(str) || /^[=+\-@\t\r]/.test(str.trimStart())) {
+    str = `'${str}`;
+  }
   if (/[;"\r\n,]/.test(str) || str.startsWith(' ') || str.endsWith(' ')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -345,6 +348,7 @@ export interface CsvPreviewRow {
   rowNumber: number;
   action: 'create' | 'update' | 'error';
   errors: string[];
+  warnings: string[];
   existingMemberId?: number;
   data: {
     first_name: string;
@@ -373,6 +377,14 @@ export interface CsvImportPreview {
   rows: CsvPreviewRow[];
 }
 
+interface ExistingLicenseMeta {
+  license_class: LicenseClass;
+  issued_at: string | null;
+  expires_at: string | null;
+  key_numbers: string[];
+  notes: string | null;
+}
+
 export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPreview {
   if (!csvText || !csvText.trim()) {
     throw new HttpError(400, 'CSV-Inhalt darf nicht leer sein.');
@@ -395,8 +407,9 @@ export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPre
     );
   }
 
+  const hasLicensesColumn = columnMap.includes('licenses');
   const existingByPersonnel = new Map<string, number>();
-  const existingByName = new Map<string, number>();
+  const existingByName = new Map<string, number[]>();
 
   const existingRows = db
     .prepare('SELECT id, first_name, last_name, personnel_number FROM members')
@@ -412,9 +425,43 @@ export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPre
       existingByPersonnel.set(r.personnel_number.trim().toLowerCase(), r.id);
     }
     const nameKey = `${r.first_name.trim().toLowerCase()}|${r.last_name.trim().toLowerCase()}`;
-    if (!existingByName.has(nameKey)) {
-      existingByName.set(nameKey, r.id);
+    const list = existingByName.get(nameKey) ?? [];
+    list.push(r.id);
+    existingByName.set(nameKey, list);
+  }
+
+  const existingLicenseRows = db
+    .prepare('SELECT member_id, license_class, issued_at, expires_at, key_numbers_json, notes FROM member_licenses')
+    .all() as Array<{
+    member_id: number;
+    license_class: LicenseClass;
+    issued_at: string | null;
+    expires_at: string | null;
+    key_numbers_json: string;
+    notes: string | null;
+  }>;
+
+  const existingLicensesByMember = new Map<number, Map<LicenseClass, ExistingLicenseMeta>>();
+  for (const row of existingLicenseRows) {
+    let map = existingLicensesByMember.get(row.member_id);
+    if (!map) {
+      map = new Map<LicenseClass, ExistingLicenseMeta>();
+      existingLicensesByMember.set(row.member_id, map);
     }
+    let keyNumbers: string[] = [];
+    try {
+      const parsed = JSON.parse(row.key_numbers_json || '[]');
+      if (Array.isArray(parsed)) keyNumbers = parsed.map((v) => String(v));
+    } catch {
+      keyNumbers = [];
+    }
+    map.set(row.license_class, {
+      license_class: row.license_class,
+      issued_at: row.issued_at,
+      expires_at: row.expires_at,
+      key_numbers: keyNumbers,
+      notes: row.notes,
+    });
   }
 
   const previewRows: CsvPreviewRow[] = [];
@@ -434,6 +481,7 @@ export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPre
     }
 
     const errors: string[] = [];
+    const warnings: string[] = [];
     const firstName = (rawFields.first_name ?? '').trim();
     const lastName = (rawFields.last_name ?? '').trim();
     if (!firstName) errors.push('Vorname fehlt');
@@ -474,7 +522,40 @@ export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPre
       existingMemberId = existingByPersonnel.get(personnelNumber.toLowerCase());
     }
     if (existingMemberId === undefined && firstName && lastName) {
-      existingMemberId = existingByName.get(`${firstName.toLowerCase()}|${lastName.toLowerCase()}`);
+      const nameMatches = existingByName.get(`${firstName.toLowerCase()}|${lastName.toLowerCase()}`) ?? [];
+      if (nameMatches.length === 1) {
+        existingMemberId = nameMatches[0];
+      } else if (nameMatches.length > 1) {
+        errors.push('Mehrdeutiger Name – bitte Personalnummer angeben');
+      }
+    }
+
+    if (existingMemberId !== undefined) {
+      const existingMap = existingLicensesByMember.get(existingMemberId);
+      if (existingMap) {
+        for (const lic of licenses) {
+          const prev = existingMap.get(lic.license_class);
+          if (prev) {
+            lic.issued_at = prev.issued_at;
+            lic.key_numbers = prev.key_numbers;
+            lic.notes = prev.notes;
+          }
+        }
+        if (hasLicensesColumn) {
+          const importedClasses = new Set(licenses.map((l) => l.license_class));
+          const droppedClasses: string[] = [];
+          for (const cls of existingMap.keys()) {
+            if (!importedClasses.has(cls)) {
+              droppedClasses.push(cls);
+            }
+          }
+          if (droppedClasses.length > 0) {
+            warnings.push(
+              `Vorhandene Klassen entfallen durch Import: ${droppedClasses.join(', ')}`,
+            );
+          }
+        }
+      }
     }
 
     let action: 'create' | 'update' | 'error';
@@ -493,6 +574,7 @@ export function previewCsvImport(csvText: string, db: AppDatabase): CsvImportPre
       rowNumber,
       action,
       errors,
+      warnings,
       existingMemberId,
       data: {
         first_name: firstName,

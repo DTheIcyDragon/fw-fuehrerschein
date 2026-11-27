@@ -54,6 +54,7 @@ export interface StateRuleConfig {
   fw_allow_trailers: boolean;
   fw_renewal_months: number | null;
   strict_inspection_blocking: boolean;
+  expired_card_blocks_driving: boolean;
   custom_rules_notes: string;
 }
 
@@ -92,6 +93,7 @@ export interface Member {
   first_name: string;
   last_name: string;
   personnel_number: string | null;
+  birth_date: string | null;
   unit: string | null;
   email: string | null;
   phone: string | null;
@@ -119,6 +121,12 @@ export interface Inspection {
   inspector_name: string;
   result: InspectionResult;
   notes: string | null;
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
+  checked_eu_card: boolean;
+  checked_fw_license: boolean;
+  checked_restrictions: boolean;
   created_at: string;
   member_first_name?: string;
   member_last_name?: string;
@@ -133,6 +141,8 @@ export interface Vehicle {
   unit: string | null;
   required_classes: LicenseClass[];
   is_automatic: boolean;
+  requires_trailer: boolean;
+  requires_briefing: boolean;
   notes: string | null;
   active: boolean;
   created_at: string;
@@ -177,6 +187,7 @@ export interface MemberEvaluation {
 
 export interface EvaluatedMember extends Member {
   last_inspection: Inspection | null;
+  briefed_vehicle_ids: number[];
   evaluation: MemberEvaluation;
 }
 
@@ -192,6 +203,36 @@ export interface VehicleDriverEntry {
   reasons: string[];
   lastInspectedAt: string | null;
   nextInspectionDueAt: string | null;
+  isBriefed: boolean;
+}
+
+export interface MemberVehicleSummary {
+  vehicleId: number;
+  name: string;
+  call_sign: string | null;
+  license_plate: string | null;
+  unit: string | null;
+  required_classes: LicenseClass[];
+  is_automatic: boolean;
+  requires_trailer: boolean;
+  requires_briefing: boolean;
+  active: boolean;
+  status: TrafficLight;
+  coveringClass: LicenseClass | null;
+  directOrIncluded: 'direct' | 'included';
+  reasons: string[];
+  isBriefed: boolean;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  actor_user_id: number | null;
+  actor_name: string;
+  action: string;
+  entity_type: string;
+  entity_id: number | null;
+  details_json: string | null;
+  created_at: string;
 }
 
 export interface EvaluatedVehicle extends Vehicle {

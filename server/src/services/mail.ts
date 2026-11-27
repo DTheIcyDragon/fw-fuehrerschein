@@ -1,3 +1,5 @@
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import nodemailer from 'nodemailer';
 import type { RawMailConfig } from './settings.js';
 
@@ -96,13 +98,185 @@ function findMethodResponse(
   return { name, args };
 }
 
+function isPrivateOrLocalIp(rawIp: string): boolean {
+  const ip = rawIp.split('%')[0].toLowerCase();
+
+  // Handle IPv4-mapped IPv6 addresses like ::ffff:127.0.0.1 or ::ffff:7f00:1
+  if (ip.startsWith('::ffff:')) {
+    const rest = ip.slice('::ffff:'.length);
+    if (net.isIPv4(rest)) {
+      return isPrivateOrLocalIp(rest);
+    }
+    const hexParts = rest.split(':');
+    if (hexParts.length === 2) {
+      const hi = Number.parseInt(hexParts[0], 16);
+      const lo = Number.parseInt(hexParts[1], 16);
+      if (Number.isFinite(hi) && Number.isFinite(lo)) {
+        const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+        return isPrivateOrLocalIp(ipv4);
+      }
+    }
+  }
+
+  if (net.isIPv4(ip)) {
+    const parts = ip.split('.').map((p) => Number(p));
+    if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return true;
+    const [a, b] = parts;
+    if (a === 0) return true; // 0.0.0.0/8
+    if (a === 10) return true; // 10.0.0.0/8
+    if (a === 127) return true; // 127.0.0.0/8
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+    if (a >= 224) return true; // multicast / reserved
+    return false;
+  }
+
+  if (net.isIPv6(ip)) {
+    if (ip === '::' || ip === '::1') return true;
+    if (ip.startsWith('fc') || ip.startsWith('fd')) return true; // fc00::/7
+    if (
+      ip.startsWith('fe8') ||
+      ip.startsWith('fe9') ||
+      ip.startsWith('fea') ||
+      ip.startsWith('feb')
+    ) {
+      return true; // fe80::/10
+    }
+    if (ip.startsWith('ff')) return true; // multicast
+    return false;
+  }
+
+  return true;
+}
+
+async function assertSafeJmapUrl(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Ungültige JMAP-URL.');
+  }
+
+  const allowInsecure = process.env.ALLOW_INSECURE_JMAP_URLS === 'true';
+  if (parsed.protocol !== 'https:' && !(allowInsecure && parsed.protocol === 'http:')) {
+    throw new Error(
+      'JMAP-URL muss HTTPS verwenden (HTTP nur zulässig mit ALLOW_INSECURE_JMAP_URLS=true).',
+    );
+  }
+
+  const allowPrivate = process.env.ALLOW_PRIVATE_JMAP_URLS === 'true';
+  if (allowPrivate) {
+    return parsed;
+  }
+
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost')) {
+    throw new Error('JMAP-Zieladresse auf localhost ist aus Sicherheitsgründen blockiert (SSRF-Schutz).');
+  }
+
+  if (net.isIP(hostname) !== 0) {
+    if (isPrivateOrLocalIp(hostname)) {
+      throw new Error('JMAP-Zieladresse verweist auf eine private oder lokale IP-Adresse (SSRF-Schutz).');
+    }
+    return parsed;
+  }
+
+  let resolved: Array<{ address: string }>;
+  try {
+    resolved = await dns.lookup(hostname, { all: true });
+  } catch {
+    throw new Error(`JMAP-Hostname "${hostname}" konnte nicht aufgelöst werden.`);
+  }
+
+  if (resolved.length === 0 || resolved.some((entry) => isPrivateOrLocalIp(entry.address))) {
+    throw new Error('JMAP-Zieladresse verweist auf eine private oder lokale IP-Adresse (SSRF-Schutz).');
+  }
+
+  return parsed;
+}
+
+function normalizeJmapSessionUrl(rawUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new Error('Ungültige JMAP-URL.');
+  }
+  if (parsed.pathname === '/' && !parsed.search) {
+    parsed.pathname = '/.well-known/jmap';
+  }
+  return parsed.toString();
+}
+
+async function parseJmapJson<T>(
+  res: Response,
+  endpointUrl: URL,
+  kind: 'Session' | 'API',
+): Promise<T> {
+  const contentType = res.headers.get('content-type') ?? '';
+  const bodyText = await res.text();
+  try {
+    return JSON.parse(bodyText) as T;
+  } catch {
+    throw new Error(
+      `JMAP-${kind}-Endpunkt (${endpointUrl.origin}${endpointUrl.pathname}) lieferte kein gültiges JSON (Content-Type: ${contentType || 'unbekannt'}). Bitte prüfen Sie die Session-URL (z. B. https://mail.beispiel.de/.well-known/jmap oder /jmap/session).`,
+    );
+  }
+}
+
+async function fetchJmapSession(rawSessionUrl: string, authHeader: string): Promise<JmapSession> {
+  let currentUrl = await assertSafeJmapUrl(normalizeJmapSessionUrl(rawSessionUrl));
+  const maxRedirects = 3;
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const res = await fetch(currentUrl.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      if (!location) {
+        throw new Error(`JMAP-Session-Weiterleitung ohne Ziel-URL (HTTP ${res.status}).`);
+      }
+      if (hop === maxRedirects) {
+        throw new Error('Zu viele Weiterleitungen beim Abrufen der JMAP-Session.');
+      }
+      const nextUrl = await assertSafeJmapUrl(new URL(location, currentUrl).toString());
+      if (nextUrl.origin !== currentUrl.origin) {
+        throw new Error(
+          `JMAP-Session-Weiterleitung auf fremden Host (${nextUrl.origin}) aus Sicherheitsgründen blockiert.`,
+        );
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(`JMAP-Session konnte nicht geladen werden (HTTP ${res.status}).`);
+    }
+
+    return parseJmapJson<JmapSession>(res, currentUrl, 'Session');
+  }
+
+  throw new Error('JMAP-Session konnte nicht geladen werden.');
+}
+
 async function postJmap(
   apiUrl: string,
   authHeader: string,
   using: string[],
   methodCalls: JmapInvocation[],
 ): Promise<JmapInvocation[]> {
-  const res = await fetch(apiUrl, {
+  const safeApiUrl = await assertSafeJmapUrl(apiUrl);
+  const res = await fetch(safeApiUrl.toString(), {
     method: 'POST',
     headers: {
       Authorization: authHeader,
@@ -110,15 +284,15 @@ async function postJmap(
       Accept: 'application/json',
     },
     body: JSON.stringify({ using, methodCalls }),
+    redirect: 'error',
     signal: AbortSignal.timeout(20000),
   });
 
   if (!res.ok) {
-    const bodyText = await res.text().catch(() => '');
-    throw new Error(`JMAP-API-Anfrage fehlgeschlagen (HTTP ${res.status}): ${bodyText || res.statusText}`);
+    throw new Error(`JMAP-API-Anfrage fehlgeschlagen (HTTP ${res.status}).`);
   }
 
-  const data = (await res.json()) as JmapResponse;
+  const data = await parseJmapJson<JmapResponse>(res, safeApiUrl, 'API');
   if (!Array.isArray(data.methodResponses)) {
     throw new Error('Ungültige JMAP-API-Antwort (methodResponses fehlt).');
   }
@@ -132,24 +306,7 @@ async function sendViaJmap(config: RawMailConfig, message: MailMessage): Promise
   }
 
   const authHeader = buildJmapAuthHeader(jmap);
-
-  const sessionRes = await fetch(jmap.sessionUrl.trim(), {
-    method: 'GET',
-    headers: {
-      Authorization: authHeader,
-      Accept: 'application/json',
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!sessionRes.ok) {
-    const bodyText = await sessionRes.text().catch(() => '');
-    throw new Error(
-      `JMAP-Session konnte nicht geladen werden (HTTP ${sessionRes.status}): ${bodyText || sessionRes.statusText}`,
-    );
-  }
-
-  const session = (await sessionRes.json()) as JmapSession;
+  const session = await fetchJmapSession(jmap.sessionUrl, authHeader);
   const apiUrl = session.apiUrl?.trim();
   if (!apiUrl) {
     throw new Error('JMAP-Session enthält keine apiUrl.');

@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#dc2626" />
     <title>Feuerwehr Führerscheinverwaltung</title>
     <link
@@ -15,8 +16,13 @@
         try {
           var saved = localStorage.getItem('fw_theme');
           var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (saved === 'dark' || (!saved && prefersDark)) {
-            document.documentElement.classList.add('dark');
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (saved === 'dark' || saved === 'light') {
+            if (meta) meta.setAttribute('content', saved);
+            document.documentElement.classList.toggle('dark', saved === 'dark');
+          } else {
+            if (meta) meta.setAttribute('content', 'light dark');
+            document.documentElement.classList.toggle('dark', Boolean(prefersDark));
           }
         } catch (e) {}
       })();

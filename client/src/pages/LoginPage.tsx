@@ -66,6 +66,9 @@ export function LoginPage() {
               required
               autoFocus
               autoComplete="username"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
 

@@ -28,6 +28,13 @@ interface UserRow {
 }
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 10;
+
+interface LoginAttemptEntry {
+  count: number;
+  resetAt: number;
+}
 
 function toPublicUser(row: UserRow): PublicUser {
   return {
@@ -45,6 +52,40 @@ function toPublicUser(row: UserRow): PublicUser {
 
 export function createAuthRouter(db: AppDatabase, settings: SettingsService): Router {
   const router = Router();
+  const loginAttempts = new Map<string, LoginAttemptEntry>();
+
+  function getAttemptKey(req: AuthRequest, username: string): string {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    return `${ip}|${username.toLowerCase()}`;
+  }
+
+  function checkLoginRateLimit(key: string): void {
+    const now = Date.now();
+    if (loginAttempts.size > 1000) {
+      for (const [k, entry] of loginAttempts) {
+        if (entry.resetAt <= now) {
+          loginAttempts.delete(k);
+        }
+      }
+    }
+    const existing = loginAttempts.get(key);
+    if (existing && existing.resetAt > now && existing.count >= LOGIN_MAX_FAILURES) {
+      throw new HttpError(
+        429,
+        'Zu viele fehlgeschlagene Anmeldeversuche. Bitte warten Sie 15 Minuten.',
+      );
+    }
+  }
+
+  function recordLoginFailure(key: string): void {
+    const now = Date.now();
+    const existing = loginAttempts.get(key);
+    if (!existing || existing.resetAt <= now) {
+      loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    } else {
+      existing.count += 1;
+    }
+  }
 
   function createSession(userId: number): string {
     const token = randomToken(32);
@@ -56,10 +97,20 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
     return token;
   }
 
-  function setSessionCookie(res: import('express').Response, token: string): void {
+  function setSessionCookie(
+    req: AuthRequest,
+    res: import('express').Response,
+    token: string,
+  ): void {
+    const secure = Boolean(
+      req.secure ||
+        req.headers['x-forwarded-proto'] === 'https' ||
+        process.env.COOKIE_SECURE === 'true',
+    );
     res.cookie(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: 'lax',
+      secure,
       path: '/',
       maxAge: SESSION_TTL_MS,
     });
@@ -98,8 +149,8 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
       if (!username) {
         throw new HttpError(400, 'Benutzername ist erforderlich');
       }
-      if (password.length < 4) {
-        throw new HttpError(400, 'Passwort muss mindestens 4 Zeichen lang sein');
+      if (password.length < 8) {
+        throw new HttpError(400, 'Passwort muss mindestens 8 Zeichen lang sein');
       }
 
       const patch: Record<string, unknown> = {};
@@ -134,7 +185,7 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
       const userId = Number(insertRes.lastInsertRowid);
       const userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as unknown as UserRow;
       const token = createSession(userId);
-      setSessionCookie(res, token);
+      setSessionCookie(req, res, token);
 
       res.status(201).json({
         user: toPublicUser(userRow),
@@ -156,13 +207,19 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
         throw new HttpError(400, 'Benutzername und Passwort sind erforderlich');
       }
 
+      const attemptKey = getAttemptKey(req, username);
+      checkLoginRateLimit(attemptKey);
+
       const userRow = db
         .prepare('SELECT * FROM users WHERE username = ?')
         .get(username) as UserRow | undefined;
 
       if (!userRow || userRow.active !== 1 || !verifyPassword(password, userRow.password_hash)) {
+        recordLoginFailure(attemptKey);
         throw new HttpError(401, 'Ungültige Anmeldedaten');
       }
+
+      loginAttempts.delete(attemptKey);
 
       const now = new Date().toISOString();
       db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(
@@ -176,7 +233,7 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
         .get(userRow.id) as unknown as UserRow;
 
       const token = createSession(Number(userRow.id));
-      setSessionCookie(res, token);
+      setSessionCookie(req, res, token);
 
       res.json({ user: toPublicUser(updatedRow) });
     }),
@@ -212,8 +269,8 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
       if (!currentPassword || !newPassword) {
         throw new HttpError(400, 'Aktuelles und neues Passwort sind erforderlich');
       }
-      if (newPassword.length < 4) {
-        throw new HttpError(400, 'Neues Passwort muss mindestens 4 Zeichen lang sein');
+      if (newPassword.length < 8) {
+        throw new HttpError(400, 'Neues Passwort muss mindestens 8 Zeichen lang sein');
       }
 
       const userRow = db
@@ -230,6 +287,13 @@ export function createAuthRouter(db: AppDatabase, settings: SettingsService): Ro
         now,
         req.user!.id,
       );
+
+      if (req.sessionToken) {
+        db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(
+          req.user!.id,
+          req.sessionToken,
+        );
+      }
 
       res.json({ ok: true });
     }),

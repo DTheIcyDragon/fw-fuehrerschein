@@ -1,19 +1,20 @@
 import PDFDocument from 'pdfkit';
+import {
+  LICENSE_CLASS_SHORT_LABELS,
+  formatDateDe,
+  getTodayIsoDate,
+} from '../../../shared/licenseRules.js';
 import type {
   EvaluatedMember,
   EvaluatedVehicle,
   Inspection,
   TrafficLight,
 } from '../../../shared/types.js';
-import {
-  LICENSE_CLASS_SHORT_LABELS,
-  formatDateDe,
-  getTodayIsoDate,
-} from '../../../shared/licenseRules.js';
 
 /**
  * Normalize text to WinAnsi/Latin-1 safe characters so built-in PDFKit fonts
- * (Helvetica) never render garbled glyphs for arrows, dashes, or emojis.
+ * (Helvetica) never render garbled glyphs for arrows, dashes, or emojis,
+ * while keeping German umlauts (äöüÄÖÜß) intact.
  */
 function safePdfText(input: string | null | undefined): string {
   if (!input) return '-';
@@ -49,8 +50,8 @@ function createPdfBuffer(build: (doc: PDFKit.PDFDocument) => void): Promise<Buff
       margin: 40,
       bufferPages: true,
       info: {
-        Producer: 'FW-Fuehrerscheinverwaltung',
-        Creator: 'FW-Fuehrerscheinverwaltung',
+        Producer: 'FW-Führerscheinverwaltung',
+        Creator: 'FW-Führerscheinverwaltung',
       },
     });
     const chunks: Buffer[] = [];
@@ -131,13 +132,13 @@ export function generateInspectionsPdf(options: {
   filterLabel?: string;
 }): Promise<Buffer> {
   return createPdfBuffer((doc) => {
-    const subtitleParts = [`Stand: ${formatDateDe(getTodayIsoDate())}`, `Eintraege: ${options.inspections.length}`];
+    const subtitleParts = [`Stand: ${formatDateDe(getTodayIsoDate())}`, `Einträge: ${options.inspections.length}`];
     if (options.filterLabel) subtitleParts.push(options.filterLabel);
 
     drawHeader(
       doc,
       options.departmentName,
-      'Pruefprotokoll Fuehrerscheinkontrollen',
+      'Prüfprotokoll Führerscheinkontrollen',
       subtitleParts.join(' | '),
     );
 
@@ -151,7 +152,7 @@ export function generateInspectionsPdf(options: {
       doc.text('Kamerad', colX.member, y + 5, { width: 115 });
       doc.text('Einheit', colX.unit, y + 5, { width: 70 });
       doc.text('Ergebnis', colX.result, y + 5, { width: 70 });
-      doc.text('Pruefer', colX.inspector, y + 5, { width: 75 });
+      doc.text('Prüfer', colX.inspector, y + 5, { width: 75 });
       doc.text('Bemerkung', colX.notes, y + 5, { width: 100 });
       doc.y = y + 22;
     };
@@ -163,33 +164,66 @@ export function generateInspectionsPdf(options: {
         .font('Helvetica')
         .fontSize(10)
         .fillColor('#64748b')
-        .text('Keine Fuehrerscheinkontrollen im gewaehlten Zeitraum vorhanden.', 40, doc.y + 6);
+        .text('Keine Führerscheinkontrollen im gewählten Zeitraum vorhanden.', 40, doc.y + 6);
       doc.y += 28;
     } else {
       for (const insp of options.inspections) {
-        if (doc.y + 34 > doc.page.height - 60) {
+        const isCancelled = Boolean(insp.cancelled_at);
+        const dateText = safePdfText(formatDateDe(insp.inspected_at));
+        const memberName = safePdfText(
+          `${insp.member_last_name ?? ''}, ${insp.member_first_name ?? ''}`.replace(/^,\s*/, '') ||
+            `#${insp.member_id}`,
+        );
+        const unitText = safePdfText(insp.member_unit ?? '-');
+        const resultStr = isCancelled
+          ? '[STORNIERT]'
+          : insp.result === 'ok'
+            ? '[OK] Ohne Befund'
+            : '[BEANSTANDUNG]';
+        const inspectorText = safePdfText(insp.inspector_name);
+
+        const noteParts: string[] = [];
+        if (isCancelled) {
+          const cancelDate = insp.cancelled_at ? formatDateDe(insp.cancelled_at.slice(0, 10)) : '';
+          noteParts.push(
+            `Storniert${cancelDate && cancelDate !== '–' ? ` am ${cancelDate}` : ''}: ${insp.cancel_reason || 'Ohne Angabe'}`,
+          );
+        }
+        if (insp.notes) {
+          noteParts.push(insp.notes);
+        }
+        const notesText = safePdfText(noteParts.length > 0 ? noteParts.join(' | ') : '-');
+
+        doc.font('Helvetica').fontSize(8.5);
+        const rowHeight = Math.max(
+          18,
+          doc.heightOfString(dateText, { width: 60 }) + 6,
+          doc.heightOfString(memberName, { width: 115 }) + 6,
+          doc.heightOfString(unitText, { width: 70 }) + 6,
+          doc.heightOfString(resultStr, { width: 72 }) + 6,
+          doc.heightOfString(inspectorText, { width: 75 }) + 6,
+          doc.heightOfString(notesText, { width: 100 }) + 6,
+        );
+
+        if (doc.y + rowHeight + 8 > doc.page.height - 60) {
           doc.addPage();
           doc.y = 40;
           drawTableHead();
         }
+
         const y = doc.y;
-        const memberName = `${insp.member_last_name ?? ''}, ${insp.member_first_name ?? ''}`.replace(/^,\s*/, '');
-        const resultStr = insp.result === 'ok' ? '[OK] Ohne Befund' : '[BEANSTANDUNG]';
-        const notesText = safePdfText(insp.notes ?? '-');
+        const textColor = isCancelled ? '#64748b' : '#0f172a';
 
-        const notesHeight = doc.heightOfString(notesText, { width: 100, align: 'left' });
-        const rowHeight = Math.max(18, notesHeight + 6);
+        doc.font('Helvetica').fontSize(8.5).fillColor(textColor);
+        doc.text(dateText, colX.date + 4, y + 2, { width: 60 });
+        doc.text(memberName, colX.member, y + 2, { width: 115 });
+        doc.text(unitText, colX.unit, y + 2, { width: 70 });
 
-        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a');
-        doc.text(safePdfText(formatDateDe(insp.inspected_at)), colX.date + 4, y + 2, { width: 60 });
-        doc.text(safePdfText(memberName || `#${insp.member_id}`), colX.member, y + 2, { width: 115 });
-        doc.text(safePdfText(insp.member_unit ?? '-'), colX.unit, y + 2, { width: 70 });
-
-        doc.fillColor(insp.result === 'ok' ? '#15803d' : '#b91c1c');
+        doc.fillColor(isCancelled ? '#64748b' : insp.result === 'ok' ? '#15803d' : '#b91c1c');
         doc.text(resultStr, colX.result, y + 2, { width: 72 });
 
-        doc.fillColor('#0f172a');
-        doc.text(safePdfText(insp.inspector_name), colX.inspector, y + 2, { width: 75 });
+        doc.fillColor(textColor);
+        doc.text(inspectorText, colX.inspector, y + 2, { width: 75 });
         doc.text(notesText, colX.notes, y + 2, { width: 100 });
 
         doc
@@ -217,14 +251,14 @@ export function generateInspectionsPdf(options: {
       .font('Helvetica-Bold')
       .fontSize(9.5)
       .fillColor('#0f172a')
-      .text('Pruefvermerk / Dokumentation zum Abheften', 50, boxY + 8);
+      .text('Prüfvermerk / Dokumentation zum Abheften', 50, boxY + 8);
 
     doc
       .font('Helvetica')
       .fontSize(8.5)
       .fillColor('#475569')
       .text(
-        'Hiermit wird die ordnungsgemaesse Durchfuehrung bzw. Pruefung der oben aufgefuehrten Fuehrerscheinkontrollen bestaetigt.',
+        'Hiermit wird die ordnungsgemäße Durchführung bzw. Prüfung der oben aufgeführten Führerscheinkontrollen bestätigt.',
         50,
         boxY + 23,
         { width: doc.page.width - 100 },
@@ -236,7 +270,7 @@ export function generateInspectionsPdf(options: {
 
     doc.fontSize(8).fillColor('#64748b');
     doc.text('Ort, Datum', 50, lineY + 3);
-    doc.text('Unterschrift Wehrfuehrung / Beauftragter', 260, lineY + 3);
+    doc.text('Unterschrift Wehrführung / Beauftragter', 260, lineY + 3);
   });
 }
 
@@ -294,12 +328,27 @@ export function generateVehiclesPdf(options: {
           .font('Helvetica')
           .fontSize(8.5)
           .fillColor('#64748b')
-          .text('Keine aktiven Kameraden mit passender Fuehrerscheinklasse.', 48, doc.y);
+          .text('Keine aktiven Kameraden mit passender Führerscheinklasse.', 48, doc.y);
         doc.y += 18;
       } else {
         for (const d of v.drivers) {
           const reasonStr = safePdfText(d.reasons.join('; '));
-          const rowHeight = Math.max(16, doc.heightOfString(reasonStr, { width: 220 }) + 4);
+          const nameStr = safePdfText(`${d.lastName}, ${d.firstName}`);
+          const unitStr = safePdfText(d.unit ?? '-');
+          const classInfo = safePdfText(
+            d.coveringClass
+              ? `${LICENSE_CLASS_SHORT_LABELS[d.coveringClass]} (${d.directOrIncluded === 'direct' ? 'direkt' : 'inkl.'})`
+              : '-',
+          );
+
+          doc.font('Helvetica').fontSize(8.5);
+          const rowHeight = Math.max(
+            16,
+            doc.heightOfString(nameStr, { width: 115 }) + 4,
+            doc.heightOfString(unitStr, { width: 65 }) + 4,
+            doc.heightOfString(classInfo, { width: 70 }) + 4,
+            doc.heightOfString(reasonStr, { width: 185 }) + 4,
+          );
           ensureSpace(doc, rowHeight + 6);
 
           const y = doc.y;
@@ -307,13 +356,9 @@ export function generateVehiclesPdf(options: {
           doc.text(statusTag(d.status), 44, y + 2, { width: 65 });
 
           doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a');
-          doc.text(safePdfText(`${d.lastName}, ${d.firstName}`), 112, y + 2, { width: 115 });
-          doc.text(safePdfText(d.unit ?? '-'), 230, y + 2, { width: 65 });
-
-          const classInfo = d.coveringClass
-            ? `${LICENSE_CLASS_SHORT_LABELS[d.coveringClass]} (${d.directOrIncluded === 'direct' ? 'direkt' : 'inkl.'})`
-            : '-';
-          doc.text(safePdfText(classInfo), 298, y + 2, { width: 70 });
+          doc.text(nameStr, 112, y + 2, { width: 115 });
+          doc.text(unitStr, 230, y + 2, { width: 65 });
+          doc.text(classInfo, 298, y + 2, { width: 70 });
 
           doc.fontSize(8).fillColor('#334155').text(reasonStr, 370, y + 2, { width: 185 });
 
@@ -349,7 +394,7 @@ export function generateMembersPdf(options: {
     drawHeader(
       doc,
       options.departmentName,
-      'Gesamtuebersicht Kameraden & Fuehrerscheine',
+      'Gesamtübersicht Kameraden & Führerscheine',
       subtitleParts.join(' | '),
     );
 
@@ -378,7 +423,7 @@ export function generateMembersPdf(options: {
         ? `Karte bis ${formatDateDe(m.card_expires_at)}`
         : 'Karte: kein Ablaufdatum';
       const inspText = m.evaluation.inspection.nextDueAt
-        ? `Kontrolle: ${formatDateDe(m.evaluation.inspection.lastInspectedAt)} -> faellig ${formatDateDe(m.evaluation.inspection.nextDueAt)}`
+        ? `Kontrolle: ${formatDateDe(m.evaluation.inspection.lastInspectedAt)} -> fällig ${formatDateDe(m.evaluation.inspection.nextDueAt)}`
         : 'Kontrolle: noch nicht erfolgt';
       const reasonsText = m.evaluation.reasons.length > 0 ? m.evaluation.reasons.join(' | ') : 'Alles aktuell';
 

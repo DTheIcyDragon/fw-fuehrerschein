@@ -6,6 +6,8 @@ import { getDefaultStateRules } from '../../../shared/licenseRules.js';
 
 export type AppDatabase = DatabaseSync;
 
+const CURRENT_SCHEMA_VERSION = 2;
+
 const DEFAULT_SETTINGS: Array<[string, unknown]> = [
   ['department_name', 'Freiwillige Feuerwehr'],
   ['inspection_interval_months', 6],
@@ -67,6 +69,7 @@ export function openDatabase(dataDir: string): AppDatabase {
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       personnel_number TEXT,
+      birth_date TEXT,
       unit TEXT,
       email TEXT,
       phone TEXT,
@@ -109,6 +112,12 @@ export function openDatabase(dataDir: string): AppDatabase {
       inspector_name TEXT NOT NULL,
       result TEXT NOT NULL CHECK (result IN ('ok', 'issue')),
       notes TEXT,
+      cancelled_at TEXT,
+      cancelled_by_name TEXT,
+      cancel_reason TEXT,
+      checked_eu_card INTEGER NOT NULL DEFAULT 1,
+      checked_fw_license INTEGER NOT NULL DEFAULT 0,
+      checked_restrictions INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -123,11 +132,38 @@ export function openDatabase(dataDir: string): AppDatabase {
       unit TEXT,
       required_classes_json TEXT NOT NULL DEFAULT '[]',
       is_automatic INTEGER NOT NULL DEFAULT 0,
+      requires_trailer INTEGER NOT NULL DEFAULT 0,
+      requires_briefing INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS vehicle_briefings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      briefed_at TEXT,
+      notes TEXT,
+      UNIQUE (member_id, vehicle_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vehicle_briefings_member ON vehicle_briefings(member_id);
+    CREATE INDEX IF NOT EXISTS idx_vehicle_briefings_vehicle ON vehicle_briefings(vehicle_id);
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_user_id INTEGER,
+      actor_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC, id DESC);
 
     CREATE TABLE IF NOT EXISTS notification_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,7 +192,64 @@ export function openDatabase(dataDir: string): AppDatabase {
   }
   insertSetting.run('ical_token', JSON.stringify(randomBytes(32).toString('hex')), now);
 
+  runMigrations(db);
+
   return db;
+}
+
+function ensureColumn(
+  db: AppDatabase,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function runMigrations(db: AppDatabase): void {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  const currentVersion = Number(row?.user_version ?? 0);
+
+  if (currentVersion < 2) {
+    ensureColumn(db, 'members', 'birth_date', 'TEXT');
+    ensureColumn(db, 'vehicles', 'requires_trailer', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(db, 'vehicles', 'requires_briefing', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(db, 'inspections', 'cancelled_at', 'TEXT');
+    ensureColumn(db, 'inspections', 'cancelled_by_name', 'TEXT');
+    ensureColumn(db, 'inspections', 'cancel_reason', 'TEXT');
+    ensureColumn(db, 'inspections', 'checked_eu_card', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(db, 'inspections', 'checked_fw_license', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(db, 'inspections', 'checked_restrictions', 'INTEGER NOT NULL DEFAULT 0');
+    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+  }
+}
+
+export function writeAuditLog(
+  db: AppDatabase,
+  entry: {
+    actorUserId?: number | null;
+    actorName: string;
+    action: string;
+    entityType: string;
+    entityId?: number | null;
+    details?: unknown;
+  },
+): void {
+  db.prepare(
+    `INSERT INTO audit_logs (actor_user_id, actor_name, action, entity_type, entity_id, details_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    entry.actorUserId ?? null,
+    entry.actorName,
+    entry.action,
+    entry.entityType,
+    entry.entityId ?? null,
+    entry.details !== undefined ? JSON.stringify(entry.details) : null,
+    new Date().toISOString(),
+  );
 }
 
 export function backupDatabaseToFile(db: AppDatabase, targetPath: string): void {

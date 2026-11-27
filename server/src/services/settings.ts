@@ -179,6 +179,10 @@ export class SettingsService {
         stored.strict_inspection_blocking !== undefined
           ? Boolean(stored.strict_inspection_blocking)
           : defaults.strict_inspection_blocking,
+      expired_card_blocks_driving:
+        stored.expired_card_blocks_driving !== undefined
+          ? Boolean(stored.expired_card_blocks_driving)
+          : defaults.expired_card_blocks_driving,
       custom_rules_notes:
         stored.custom_rules_notes !== undefined
           ? String(stored.custom_rules_notes)
@@ -392,6 +396,10 @@ export class SettingsService {
           'strict_inspection_blocking' in incoming
             ? Boolean(incoming.strict_inspection_blocking)
             : prev.strict_inspection_blocking,
+        expired_card_blocks_driving:
+          'expired_card_blocks_driving' in incoming
+            ? Boolean(incoming.expired_card_blocks_driving)
+            : prev.expired_card_blocks_driving,
         custom_rules_notes:
           'custom_rules_notes' in incoming
             ? String(incoming.custom_rules_notes ?? '')
