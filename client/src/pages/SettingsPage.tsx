@@ -152,8 +152,8 @@ export function SettingsPage() {
       applySettingsToState(s);
       setLogs(logList);
       setUsers(userList);
-      if (!testEmail && currentUser?.email) {
-        setTestEmail(currentUser.email);
+      if (currentUser?.email) {
+        setTestEmail((prev) => prev || currentUser.email || '');
       }
     } catch (err) {
       showToast(
@@ -163,7 +163,7 @@ export function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [applySettingsToState, currentUser?.email, showToast, testEmail]);
+  }, [applySettingsToState, currentUser?.email, showToast]);
 
   useEffect(() => {
     if (isAdmin) {
