@@ -197,14 +197,86 @@ async function assertSafeJmapUrl(rawUrl: string): Promise<URL> {
   return parsed;
 }
 
+function normalizeJmapSessionUrl(rawUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new Error('Ungültige JMAP-URL.');
+  }
+  if (parsed.pathname === '/' && !parsed.search) {
+    parsed.pathname = '/.well-known/jmap';
+  }
+  return parsed.toString();
+}
+
+async function parseJmapJson<T>(
+  res: Response,
+  endpointUrl: URL,
+  kind: 'Session' | 'API',
+): Promise<T> {
+  const contentType = res.headers.get('content-type') ?? '';
+  const bodyText = await res.text();
+  try {
+    return JSON.parse(bodyText) as T;
+  } catch {
+    throw new Error(
+      `JMAP-${kind}-Endpunkt (${endpointUrl.origin}${endpointUrl.pathname}) lieferte kein gültiges JSON (Content-Type: ${contentType || 'unbekannt'}). Bitte prüfen Sie die Session-URL (z. B. https://mail.beispiel.de/.well-known/jmap oder /jmap/session).`,
+    );
+  }
+}
+
+async function fetchJmapSession(rawSessionUrl: string, authHeader: string): Promise<JmapSession> {
+  let currentUrl = await assertSafeJmapUrl(normalizeJmapSessionUrl(rawSessionUrl));
+  const maxRedirects = 3;
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const res = await fetch(currentUrl.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      if (!location) {
+        throw new Error(`JMAP-Session-Weiterleitung ohne Ziel-URL (HTTP ${res.status}).`);
+      }
+      if (hop === maxRedirects) {
+        throw new Error('Zu viele Weiterleitungen beim Abrufen der JMAP-Session.');
+      }
+      const nextUrl = await assertSafeJmapUrl(new URL(location, currentUrl).toString());
+      if (nextUrl.origin !== currentUrl.origin) {
+        throw new Error(
+          `JMAP-Session-Weiterleitung auf fremden Host (${nextUrl.origin}) aus Sicherheitsgründen blockiert.`,
+        );
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(`JMAP-Session konnte nicht geladen werden (HTTP ${res.status}).`);
+    }
+
+    return parseJmapJson<JmapSession>(res, currentUrl, 'Session');
+  }
+
+  throw new Error('JMAP-Session konnte nicht geladen werden.');
+}
+
 async function postJmap(
   apiUrl: string,
   authHeader: string,
   using: string[],
   methodCalls: JmapInvocation[],
 ): Promise<JmapInvocation[]> {
-  await assertSafeJmapUrl(apiUrl);
-  const res = await fetch(apiUrl, {
+  const safeApiUrl = await assertSafeJmapUrl(apiUrl);
+  const res = await fetch(safeApiUrl.toString(), {
     method: 'POST',
     headers: {
       Authorization: authHeader,
@@ -220,7 +292,7 @@ async function postJmap(
     throw new Error(`JMAP-API-Anfrage fehlgeschlagen (HTTP ${res.status}).`);
   }
 
-  const data = (await res.json()) as JmapResponse;
+  const data = await parseJmapJson<JmapResponse>(res, safeApiUrl, 'API');
   if (!Array.isArray(data.methodResponses)) {
     throw new Error('Ungültige JMAP-API-Antwort (methodResponses fehlt).');
   }
@@ -233,24 +305,8 @@ async function sendViaJmap(config: RawMailConfig, message: MailMessage): Promise
     throw new Error('JMAP-Session-URL ist nicht konfiguriert.');
   }
 
-  const safeSessionUrl = await assertSafeJmapUrl(jmap.sessionUrl.trim());
   const authHeader = buildJmapAuthHeader(jmap);
-
-  const sessionRes = await fetch(safeSessionUrl.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: authHeader,
-      Accept: 'application/json',
-    },
-    redirect: 'error',
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!sessionRes.ok) {
-    throw new Error(`JMAP-Session konnte nicht geladen werden (HTTP ${sessionRes.status}).`);
-  }
-
-  const session = (await sessionRes.json()) as JmapSession;
+  const session = await fetchJmapSession(jmap.sessionUrl, authHeader);
   const apiUrl = session.apiUrl?.trim();
   if (!apiUrl) {
     throw new Error('JMAP-Session enthält keine apiUrl.');

@@ -870,6 +870,12 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     const jmapMockServer = http.createServer((req, res) => {
       const auth = req.headers.authorization ?? '';
       if (req.method === 'GET' && req.url === '/.well-known/jmap') {
+        res.writeHead(302, { Location: '/jmap/session' });
+        res.end();
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/jmap/session') {
         recorded.sessionAuthHeaders.push(auth);
         const port = (jmapMockServer.address() as AddressInfo).port;
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -882,6 +888,12 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
             },
           }),
         );
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/plain-text') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('hi 89.56.37.178');
         return;
       }
 
@@ -1028,6 +1040,35 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
       }
       assert.equal(testMailRes.status, 200);
       assert.equal(testMailRes.data.ok, true);
+
+      // Plain-text / non-JSON response yields clear error without leaking body
+      process.env.ALLOW_INSECURE_JMAP_URLS = 'true';
+      process.env.ALLOW_PRIVATE_JMAP_URLS = 'true';
+      let plainRes!: { status: number; data: { error?: string } };
+      try {
+        plainRes = await adminClient.json<{ error?: string }>('POST', '/api/notifications/test', {
+          toEmail: 'empfaenger@feuerwehr.local',
+          override: {
+            provider: 'jmap',
+            jmap: {
+              sessionUrl: `http://127.0.0.1:${mockPort}/plain-text`,
+              authType: 'bearer',
+              username: '',
+              token: overrideToken,
+              password: '',
+              fromEmail: 'kommandant@feuerwehr.local',
+              fromName: 'FF Musterstadt',
+              accountId: '',
+            },
+          },
+        });
+      } finally {
+        delete process.env.ALLOW_INSECURE_JMAP_URLS;
+        delete process.env.ALLOW_PRIVATE_JMAP_URLS;
+      }
+      assert.equal(plainRes.status, 502);
+      assert.ok(plainRes.data.error?.includes('kein gültiges JSON'));
+      assert.ok(!plainRes.data.error?.includes('89.56.37.178'));
 
       assert.ok(recorded.sessionAuthHeaders.includes(`Bearer ${overrideToken}`));
       assert.ok(recorded.apiAuthHeaders.includes(`Bearer ${overrideToken}`));

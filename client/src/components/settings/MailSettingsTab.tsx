@@ -292,6 +292,11 @@ export function MailSettingsTab({
                     onChange={(e) => setJmapSessionUrl(e.target.value)}
                     placeholder="https://mail.example.org/.well-known/jmap"
                   />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Z. B. <code>https://mail.beispiel.de/.well-known/jmap</code> oder{' '}
+                    <code>/jmap/session</code> (reine Domain-URLs werden automatisch um{' '}
+                    <code>/.well-known/jmap</code> ergänzt).
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium">Authentifizierung</label>
