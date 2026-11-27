@@ -356,6 +356,7 @@ export function DashboardPage() {
         open={inspectOpen}
         members={attentionMembers}
         initialMemberId={inspectMemberId}
+        loadAllActive={inspectMemberId === null}
         onClose={() => setInspectOpen(false)}
         onSaved={() => void loadData()}
       />

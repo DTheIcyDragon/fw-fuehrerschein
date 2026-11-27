@@ -1048,31 +1048,58 @@ export function evaluateMember(
     member.card_issued_at < '2013-01-19' &&
     !member.card_expires_at
   ) {
-    if (member.birth_date && isValidIsoDate(member.birth_date)) {
-      const { year: birthYear } = parseIsoDateParts(member.birth_date);
-      let exchangeDate = '2025-01-19';
-      if (birthYear < 1953) exchangeDate = '2033-01-19';
-      else if (birthYear <= 1958) exchangeDate = '2022-01-19';
-      else if (birthYear <= 1964) exchangeDate = '2023-01-19';
-      else if (birthYear <= 1970) exchangeDate = '2024-01-19';
+    const isPaperLicense = member.card_issued_at <= '1998-12-31';
+    const hasBirthDate = Boolean(member.birth_date && isValidIsoDate(member.birth_date));
+    const birthYear = hasBirthDate ? parseIsoDateParts(member.birth_date!).year : null;
 
+    let exchangeDate: string | null = null;
+    let basisLabel = '';
+
+    if (isPaperLicense) {
+      if (birthYear !== null) {
+        exchangeDate = '2025-01-19';
+        if (birthYear < 1953) exchangeDate = '2033-01-19';
+        else if (birthYear <= 1958) exchangeDate = '2022-01-19';
+        else if (birthYear <= 1964) exchangeDate = '2023-01-19';
+        else if (birthYear <= 1970) exchangeDate = '2024-01-19';
+        basisLabel = `Geburtsjahr ${birthYear}`;
+      } else {
+        reasons.push(
+          'Papierführerschein (bis 31.12.1998): Gestaffelte Umtauschfrist nach Geburtsjahr (Anlage 8e FeV) prüfen',
+        );
+      }
+    } else {
+      const { year: issuedYear } = parseIsoDateParts(member.card_issued_at);
+      if (birthYear !== null && birthYear < 1953) {
+        exchangeDate = '2033-01-19';
+        basisLabel = `Geburtsjahr ${birthYear}`;
+      } else {
+        if (issuedYear <= 2001) exchangeDate = '2026-01-19';
+        else if (issuedYear <= 2004) exchangeDate = '2027-01-19';
+        else if (issuedYear <= 2007) exchangeDate = '2028-01-19';
+        else if (issuedYear === 2008) exchangeDate = '2029-01-19';
+        else if (issuedYear === 2009) exchangeDate = '2030-01-19';
+        else if (issuedYear === 2010) exchangeDate = '2031-01-19';
+        else if (issuedYear === 2011) exchangeDate = '2032-01-19';
+        else exchangeDate = '2033-01-19';
+        basisLabel = `Ausstellungsjahr ${issuedYear}`;
+      }
+    }
+
+    if (exchangeDate) {
       if (today > exchangeDate) {
         reasons.push(
-          `Umtauschfrist für Altführerschein (Geburtsjahr ${birthYear}) am ${formatDateDe(exchangeDate)} abgelaufen`,
+          `Umtauschfrist für Altführerschein (${basisLabel}) am ${formatDateDe(exchangeDate)} abgelaufen`,
         );
         overallStatus = worstStatus(overallStatus, 'yellow');
       } else {
         reasons.push(
-          `Gestaffelte Umtauschfrist für Altführerschein: Pflichtumtausch bis ${formatDateDe(exchangeDate)}`,
+          `Gestaffelte Umtauschfrist für Altführerschein (${basisLabel}): Pflichtumtausch bis ${formatDateDe(exchangeDate)}`,
         );
         if (diffDaysIso(today, exchangeDate) <= settings.license_warn_days) {
           overallStatus = worstStatus(overallStatus, 'yellow');
         }
       }
-    } else {
-      reasons.push(
-        'Altführerschein (vor 19.01.2013): Gestaffelte Umtauschfrist nach Geburtsjahr prüfen',
-      );
     }
   }
 

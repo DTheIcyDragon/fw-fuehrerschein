@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 type Theme = 'light' | 'dark';
 
@@ -10,37 +10,86 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-function getInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
+function getSystemTheme(): Theme {
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function getStoredOverride(): Theme | null {
+  if (typeof window === 'undefined') return null;
   try {
     const stored = localStorage.getItem('fw_theme');
     if (stored === 'dark' || stored === 'light') return stored;
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
   } catch {
     // ignore storage errors
   }
-  return 'light';
+  return null;
+}
+
+function applyThemeToDom(resolved: Theme, isExplicitOverride: boolean): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('dark', resolved === 'dark');
+  const meta = document.querySelector('meta[name="color-scheme"]');
+  if (meta) {
+    meta.setAttribute('content', isExplicitOverride ? resolved : 'light dark');
+  }
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+  const [theme, setThemeState] = useState<Theme>(() => getStoredOverride() ?? getSystemTheme());
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
+    applyThemeToDom(theme, getStoredOverride() !== null);
+  }, [theme]);
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+
+    const syncFromSystemOrStorage = () => {
+      const override = getStoredOverride();
+      const resolved = override ?? getSystemTheme();
+      setThemeState(resolved);
+      applyThemeToDom(resolved, override !== null);
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === 'fw_theme') {
+        syncFromSystemOrStorage();
+      }
+    };
+
+    const handleMediaChange = () => {
+      if (getStoredOverride() === null) {
+        syncFromSystemOrStorage();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    media?.addEventListener?.('change', handleMediaChange);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      media?.removeEventListener?.('change', handleMediaChange);
+    };
+  }, []);
+
+  const setTheme = useCallback((next: Theme) => {
+    const sys = getSystemTheme();
     try {
-      localStorage.setItem('fw_theme', theme);
+      if (next === sys) {
+        localStorage.removeItem('fw_theme');
+      } else {
+        localStorage.setItem('fw_theme', next);
+      }
     } catch {
       // ignore storage errors
     }
-  }, [theme]);
+    setThemeState(next);
+    applyThemeToDom(next, next !== sys);
+  }, []);
 
-  const setTheme = (next: Theme) => setThemeState(next);
-  const toggleTheme = () => setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  }, [theme, setTheme]);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>

@@ -156,6 +156,9 @@ export function SetupPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   autoComplete="username"
+                  spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
                 />
               </div>
               <div>

@@ -313,6 +313,13 @@ test('End-to-End API: Auth/Roles, Members/Licenses/Inspections/Vehicles, CSV, PD
     assert.equal((await clientA.json('GET', '/api/auth/me')).status, 200);
     assert.equal((await clientB.json('GET', '/api/auth/me')).status, 401);
 
+    // Admin password reset via PUT /api/users/:id also invalidates existing sessions
+    const adminResetRes = await adminClient.json('PUT', `/api/users/${rateUserRes.data.id}`, {
+      password: 'adminreset123',
+    });
+    assert.equal(adminResetRes.status, 200);
+    assert.equal((await clientA.json('GET', '/api/auth/me')).status, 401);
+
     // 10 failed login attempts -> 11th returns 429
     for (let i = 0; i < 10; i++) {
       const failRes = await anonClient.json('POST', '/api/auth/login', {

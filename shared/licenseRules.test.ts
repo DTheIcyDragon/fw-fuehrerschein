@@ -489,3 +489,41 @@ test('fw_allow_trailers=false blocks FW drivers on trailer vehicles, and require
   assert.equal(blockedTrailer[0].status, 'red');
   assert.ok(blockedTrailer[0].reasons.some((r) => r.includes('Anhängerbetrieb')));
 });
+
+test('Anlage 8e FeV distinguishes paper licenses (<=1998) by birth year and card licenses (1999-2013) by issue year', () => {
+  const insp = makeInspection('2026-05-01');
+  const today = '2026-06-01';
+
+  // Paper license (1998) for birth year 1985 -> deadline 19.01.2025 -> expired -> yellow
+  const paper1985 = makeMember({
+    birth_date: '1985-03-15',
+    card_issued_at: '1998-06-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '1998-06-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evPaper = evaluateMember(paper1985, insp, baseSettings, today);
+  assert.equal(evPaper.overallStatus, 'yellow');
+  assert.ok(evPaper.reasons.some((r) => r.includes('19.01.2025') && r.includes('abgelaufen')));
+
+  // Card license (2010) for birth year 1985 -> deadline 19.01.2031 -> NOT expired in 2026 -> green
+  const card2010 = makeMember({
+    birth_date: '1985-03-15',
+    card_issued_at: '2010-06-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '2010-06-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evCard2010 = evaluateMember(card2010, insp, baseSettings, today);
+  assert.equal(evCard2010.overallStatus, 'green');
+  assert.ok(evCard2010.reasons.some((r) => r.includes('19.01.2031')));
+
+  // Card license (2000) for birth year < 1953 -> deadline 19.01.2033
+  const cardPre1953 = makeMember({
+    birth_date: '1950-01-10',
+    card_issued_at: '2000-05-01',
+    card_expires_at: null,
+    licenses: [{ license_class: 'B', issued_at: '2000-05-01', expires_at: null, key_numbers: [], notes: null }],
+  });
+  const evPre1953 = evaluateMember(cardPre1953, insp, baseSettings, today);
+  assert.equal(evPre1953.overallStatus, 'green');
+  assert.ok(evPre1953.reasons.some((r) => r.includes('19.01.2033')));
+});

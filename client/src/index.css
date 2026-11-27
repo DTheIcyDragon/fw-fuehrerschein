@@ -3,12 +3,39 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
   }
 
   body {
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    accent-color: #dc2626;
+  }
+
+  dialog.modal-dialog[open] {
+    display: flex;
+  }
+
+  dialog:modal {
+    overscroll-behavior: contain;
+  }
+
+  dialog::backdrop {
+    background-color: rgb(2 6 23 / 0.65);
+    overflow: hidden;
+    overscroll-behavior: contain;
   }
 }
 

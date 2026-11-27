@@ -92,6 +92,10 @@ export function UsersSettingsTab({
                   value={uUsername}
                   onChange={(e) => setUUsername(e.target.value)}
                   required
+                  autoComplete="username"
+                  spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
                 />
               </div>
             )}
@@ -137,6 +141,7 @@ export function UsersSettingsTab({
                 onChange={(e) => setUPassword(e.target.value)}
                 required={!editingUser}
                 minLength={editingUser && !uPassword ? undefined : 8}
+                autoComplete="new-password"
               />
             </div>
           </div>

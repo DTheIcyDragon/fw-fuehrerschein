@@ -14,6 +14,7 @@ interface InspectionModalProps {
   open: boolean;
   members: EvaluatedMember[];
   initialMemberId?: number | null;
+  loadAllActive?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -22,6 +23,7 @@ export function InspectionModal({
   open,
   members,
   initialMemberId,
+  loadAllActive = false,
   onClose,
   onSaved,
 }: InspectionModalProps) {
@@ -54,11 +56,13 @@ export function InspectionModal({
     setCheckedEuCard(true);
 
     let active = true;
-    if (!initialMemberId && members.length <= 5) {
+    if (loadAllActive && !initialMemberId) {
       api
         .listMembers({ status: 'active' })
         .then((list) => {
-          if (active) setFetchedMembers(list);
+          if (!active) return;
+          setFetchedMembers(list);
+          setMemberId((prev) => (prev === 0 && list.length > 0 ? list[0].id : prev));
         })
         .catch(() => {
           // fallback to provided members list
@@ -79,7 +83,7 @@ export function InspectionModal({
     return () => {
       active = false;
     };
-  }, [open, initialMemberId, members]);
+  }, [open, initialMemberId, loadAllActive, members]);
 
   useEffect(() => {
     if (!open || !selectedMember) return;
